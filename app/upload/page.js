@@ -43,11 +43,11 @@ export default function UploadPage() {
 
     // prepare 페이지에서 저장된 정보 가져오기
     const [prepareData, setPrepareData] = useState({
-        grade: "",
-        subject: "",
-        unitName: "",
-        feedbackAreas: [],
-        lessonPlan: null,
+        topic: "",
+        audience: "",
+        duration: "",
+        feedbackItems: [],
+        presentationMaterial: null,
         conditions: []
     });
 
@@ -136,8 +136,8 @@ export default function UploadPage() {
         <main className="upload-page">
             <div className="upload-container">
                 <header className="upload-header">
-                    <h1>수업 영상 업로드</h1>
-                    <p>분석할 수업 영상을 업로드해주세요.</p>
+                    <h1>발표 영상 업로드</h1>
+                    <p>분석할 발표 영상을 업로드해주세요.</p>
                 </header>
 
                 {/* 업로드 영역 */}
@@ -213,9 +213,9 @@ export default function UploadPage() {
                 <section className="upload-tips">
                     <h3>업로드 전 확인사항</h3>
                     <ul>
-                        <li>촬영 각도: 교사의 전신과 표정이 보이도록 촬영해주세요.</li>
-                        <li>음성 품질: 교사의 목소리가 명확하게 녹음되어야 합니다.</li>
-                        <li>영상 길이: 5분~15분 사이의 영상을 권장합니다.</li>
+                        <li>촬영 각도: 발표자의 상체와 얼굴, 손동작이 보이도록 정면에서 촬영해주세요.</li>
+                        <li>음성 품질: 발표자의 목소리가 명확하게 녹음되어야 합니다.</li>
+                        <li>영상 길이: 3분~15분 사이의 영상을 권장합니다.</li>
                     </ul>
                 </section>
 

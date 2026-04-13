@@ -82,9 +82,10 @@ a {
 
 .login-logo {
   display: block;
-  width: 160px;
+  width: auto;
   height: 80px;
   margin: 0 auto 24px;
+  object-fit: contain;
 }
 
 .title {
@@ -215,8 +216,9 @@ a {
 }
 
 .topbar-logo {
-  width: 70px;
+  width: auto;
   height: 40px;
+  object-fit: contain;
 }
 
 .topbar-title {
@@ -8694,4 +8696,53 @@ a {
   .mobile-view-more {
     display: none;
   }
+}
+
+/* === Presentation feedback: category grouping styles === */
+.feedback-category-block {
+  margin: 1.25rem 0 1.75rem;
+  padding: 1rem 1.25rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.feedback-category-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.feedback-category-title h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.feedback-category-title .category-icon {
+  font-size: 1.5rem;
+}
+
+.feedback-category-title .category-short {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 0.1rem;
+}
+
+.btn-category-toggle {
+  margin-left: auto;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-category-toggle:hover {
+  background: #f1f5f9;
 }

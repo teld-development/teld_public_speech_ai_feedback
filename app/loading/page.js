@@ -106,28 +106,27 @@ export default function LoadingPage() {
 
                 console.log("[Loading] Blob 업로드 완료:", blobResult.url);
 
-                // ===== 지도안 업로드 (있는 경우만) =====
-                let lessonPlanUrl = null;
-                if (prepareData.lessonPlan) {
-                    console.log("[Loading] 지도안 업로드 시작...");
+                // ===== 발표 자료 업로드 (있는 경우만) =====
+                let materialUrl = null;
+                if (prepareData.presentationMaterial) {
+                    console.log("[Loading] 발표 자료 업로드 시작...");
                     try {
-                        // Base64를 ArrayBuffer로 변환
-                        const binaryString = atob(prepareData.lessonPlan.base64);
+                        const binaryString = atob(prepareData.presentationMaterial.base64);
                         const bytes = new Uint8Array(binaryString.length);
                         for (let i = 0; i < binaryString.length; i++) {
                             bytes[i] = binaryString.charCodeAt(i);
                         }
-                        const lessonPlanBlob = new Blob([bytes], { type: prepareData.lessonPlan.type });
-                        const lessonPlanFile = new File([lessonPlanBlob], prepareData.lessonPlan.name, { type: prepareData.lessonPlan.type });
+                        const materialBlob = new Blob([bytes], { type: prepareData.presentationMaterial.type });
+                        const materialFile = new File([materialBlob], prepareData.presentationMaterial.name, { type: prepareData.presentationMaterial.type });
 
-                        const lessonPlanResult = await upload(lessonPlanFile.name, lessonPlanFile, {
+                        const materialResult = await upload(materialFile.name, materialFile, {
                             access: 'public',
                             handleUploadUrl: '/api/upload-blob',
                         });
-                        lessonPlanUrl = lessonPlanResult.url;
-                        console.log("[Loading] 지도안 업로드 완료:", lessonPlanUrl);
+                        materialUrl = materialResult.url;
+                        console.log("[Loading] 발표 자료 업로드 완료:", materialUrl);
                     } catch (lpError) {
-                        console.warn("[Loading] 지도안 업로드 실패 (계속 진행):", lpError.message);
+                        console.warn("[Loading] 발표 자료 업로드 실패 (계속 진행):", lpError.message);
                     }
                 }
 
@@ -157,18 +156,12 @@ export default function LoadingPage() {
                         blobUrl: blobResult.url,
                         fileName: name,
                         mimeType: type,
-                        grade: prepareData.grade || "",
-                        subject: prepareData.subject || "",
-                        unitName: prepareData.unitName || "",
-                        feedbackAreas: (prepareData.feedbackAreas || []).join(","),
-                        lessonPlanUrl: lessonPlanUrl,
+                        topic: prepareData.topic || "",
+                        audience: prepareData.audience || "",
+                        duration: prepareData.duration || "",
+                        feedbackItems: prepareData.feedbackItems || [],
+                        materialUrl: materialUrl,
                         conditions: prepareData.conditions || [],
-                        showScoreWithFeedback: (() => {
-                            try {
-                                const ps = localStorage.getItem("profileSettings");
-                                return ps ? JSON.parse(ps).showScoreWithFeedback || false : false;
-                            } catch { return false; }
-                        })(),
                     }),
                 });
 
@@ -252,7 +245,7 @@ export default function LoadingPage() {
                 </div>
 
                 {/* 제목 */}
-                <h1 className="loading-title">수업 영상 분석 중</h1>
+                <h1 className="loading-title">발표 영상 분석 중</h1>
                 <p className="loading-subtitle">AI가 영상을 분석하고 있습니다. 약 1~2분 정도 소요됩니다.</p>
 
                 {/* 경과 시간 */}

@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "AI 기반 수업실연 피드백 시스템",
-  description: "Dummy login and dashboard"
+  title: "AI 기반 발표 피드백 시스템",
+  description: "AI-powered presentation feedback system"
 };
 
 export default function RootLayout({ children }) {

@@ -2,165 +2,107 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { FEEDBACK_CATEGORIES } from "../lib/feedbackAreas";
 
-// 더미 영역별 최근 피드백 데이터
-const AREA_FEEDBACKS = [
-  {
-    id: "delivery",
-    icon: "🎤",
-    name: "전달력",
-    feedback: "발음이 명확하고 적절한 속도로 설명하고 있습니다. 중요 개념 강조 시 톤 변화가 효과적입니다."
-  },
-  {
-    id: "interaction",
-    icon: "💬",
-    name: "상호작용",
-    feedback: "개방형 질문을 자주 활용하고 있습니다. 더 다양한 학생에게 발표 기회를 주면 좋겠습니다."
-  },
-  {
-    id: "attitude",
-    icon: "🙂",
-    name: "태도",
-    feedback: "학생들과 눈 맞춤을 잘 유지하며 친근한 표정으로 수업을 진행하고 있습니다."
-  },
-  {
-    id: "content",
-    icon: "📋",
-    name: "교수·학습 구성",
-    feedback: "도입부에서 학습 목표를 명확히 제시했습니다. 정리 단계에서 요약을 추가하면 더 효과적입니다."
-  },
-  {
-    id: "board",
-    icon: "📊",
-    name: "판서/자료",
-    feedback: "시각 자료가 학습 내용과 잘 연결되어 있습니다. 핵심 키워드 강조 색상을 활용해보세요."
-  },
-  {
-    id: "habit",
-    icon: "🔄",
-    name: "수업 습관",
-    feedback: "설명 중 '자, 그러면'이라는 표현이 자주 반복됩니다. 다양한 전환 표현을 활용해보세요."
-  }
-];
+// 더미 피드백: 항목별 최근 피드백 텍스트
+const DUMMY_FEEDBACK = {
+    eye_contact: "카메라 렌즈 응시가 전반적으로 양호합니다. 중요 포인트에서 더 길게 시선을 고정해보세요.",
+    facial_expression: "설명 내용에 맞춰 자연스러운 미소와 눈썹 움직임이 나타납니다.",
+    gesture: "프레임 내에서 손동작이 안정적입니다. 핵심 강조 시 더 분명한 제스처를 활용해보세요.",
+    verbal_nonverbal_sync: "말의 강조점과 손동작의 타이밍이 잘 맞습니다.",
+    audience_awareness: "청중 반응을 의식하는 고갯짓이 가끔 나타납니다. 조금 더 빈번하면 좋겠습니다.",
+    no_distraction: "몸을 흔들거나 머리를 만지는 습관이 일부 관찰됩니다.",
+    facing: "상체가 전반적으로 카메라 정면을 향해 있습니다.",
+    prosody: "속도가 일정하여 안정적이나, 톤의 변화를 더 주면 몰입도가 올라갑니다.",
+    language_choice: "전문 용어 사용이 적절합니다. 청중 수준에 맞춘 풀어쓰기를 병행해보세요.",
+    audience_adaptation: "사전 준비된 스크립트 위주이며, 실시간 반응에 따른 조정은 제한적입니다.",
+    media_interaction: "슬라이드 전환이 매끄럽습니다. 화면 공유 지연은 보이지 않습니다.",
+    professional_appearance: "복장과 배경이 발표 맥락에 부합합니다.",
+};
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+    const router = useRouter();
+    const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
-  const handleLogout = () => {
-    router.push("/");
-  };
+    const handleLogout = () => {
+        router.push("/");
+    };
 
-  return (
-    <div className="dashboard-v2">
-      {/* 상단바 */}
-      <header className="topbar-v2">
-        <div className="topbar-left">
-          <img src="/logo.svg" alt="Logo" className="topbar-logo" />
-          <h1 className="topbar-title">AI 수업실연 피드백 시스템</h1>
-        </div>
-        <div className="topbar-account">
-          <button
-            className="account-btn"
-            onClick={() => setAccountMenuOpen(!accountMenuOpen)}
-          >
-            내 계정
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {accountMenuOpen && (
-            <div className="account-dropdown">
-              <button onClick={() => router.push("/mypage")}>마이페이지</button>
-              <button onClick={handleLogout}>로그아웃</button>
-            </div>
-          )}
-        </div>
-      </header>
-
-      {/* 메인 컨텐츠 */}
-      <main className="dashboard-content-v2">
-        {/* 상단 네비게이션 */}
-        <div className="dashboard-nav-bar">
-          <button className="back-to-xr-btn" onClick={() => router.push("/xr_int_dashboard")}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
-            통합 대시보드로 돌아가기
-          </button>
-        </div>
-
-        {/* 메인 기능 카드들 */}
-        <section className="feature-cards">
-          {/* 새 분석 시작 카드 */}
-          <div className="feature-card primary-card" onClick={() => router.push("/prepare")}>
-            <div className="card-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <polygon points="23 7 16 12 23 17 23 7" />
-                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-              </svg>
-            </div>
-            <div className="card-content">
-              <h3>수업 영상 분석하기</h3>
-              <p>수업 영상을 업로드하고 AI 피드백을 받아보세요</p>
-            </div>
-            <div className="card-arrow">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </div>
-          </div>
-
-          {/* 영역별 최근 피드백 그리드 */}
-          <div className="feedback-areas-grid">
-            <div className="feedback-areas-header">
-              <h3>📋 영역별 최근 피드백</h3>
-              <span className="last-updated">최근 분석: 2026.01.10</span>
-            </div>
-            <div className="areas-grid-v2">
-              {AREA_FEEDBACKS.map((area) => (
-                <div key={area.id} className="area-feedback-card">
-                  <div className="area-header">
-                    <span className="area-icon-v2">{area.icon}</span>
-                    <span className="area-name-v2">{area.name}</span>
-                  </div>
-                  <p className="area-feedback-text">{area.feedback}</p>
+    return (
+        <div className="dashboard-v2">
+            <header className="topbar-v2">
+                <div className="topbar-left">
+                    <img src="/logo.png" alt="Logo" className="topbar-logo" />
+                    <h1 className="topbar-title">AI 발표 피드백 시스템</h1>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="topbar-account">
+                    <button
+                        className="account-btn"
+                        onClick={() => setAccountMenuOpen(!accountMenuOpen)}
+                    >
+                        내 계정
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M6 9l6 6 6-6" />
+                        </svg>
+                    </button>
+                    {accountMenuOpen && (
+                        <div className="account-dropdown">
+                            <button onClick={handleLogout}>로그아웃</button>
+                        </div>
+                    )}
+                </div>
+            </header>
 
-          {/* 부가 기능 카드들 */}
-          <div className="secondary-cards">
-            <div className="feature-card secondary-card">
-              <div className="card-icon small">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-              </div>
-              <div className="card-content">
-                <h4>피드백 가이드</h4>
-                <p>효과적인 수업을 위한 팁</p>
-              </div>
-            </div>
+            <main className="dashboard-content-v2">
+                <section className="feature-cards">
+                    <div className="feature-card primary-card" onClick={() => router.push("/prepare")}>
+                        <div className="card-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <polygon points="23 7 16 12 23 17 23 7" />
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                            </svg>
+                        </div>
+                        <div className="card-content">
+                            <h3>발표 영상 분석하기</h3>
+                            <p>발표 영상을 업로드하고 AI 피드백을 받아보세요</p>
+                        </div>
+                        <div className="card-arrow">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </div>
+                    </div>
 
-            <div className="feature-card secondary-card">
-              <div className="card-icon small">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-              </div>
-              <div className="card-content">
-                <h4>도움말</h4>
-                <p>서비스 이용 안내</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
-  );
+                    <div className="feedback-areas-grid">
+                        <div className="feedback-areas-header">
+                            <h3>📋 영역별 최근 피드백</h3>
+                            <span className="last-updated">최근 분석: 2026.04.10</span>
+                        </div>
+
+                        {FEEDBACK_CATEGORIES.map((cat) => (
+                            <div key={cat.id} className="feedback-category-block">
+                                <div className="feedback-category-title">
+                                    <span className="category-icon">{cat.icon}</span>
+                                    <div>
+                                        <h4>{cat.label}</h4>
+                                        <span className="category-short">{cat.shortLabel}</span>
+                                    </div>
+                                </div>
+                                <div className="areas-grid-v2">
+                                    {cat.items.map((item) => (
+                                        <div key={item.id} className="area-feedback-card">
+                                            <div className="area-header">
+                                                <span className="area-name-v2">{item.label}</span>
+                                            </div>
+                                            <p className="area-feedback-text">{DUMMY_FEEDBACK[item.id]}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            </main>
+        </div>
+    );
 }

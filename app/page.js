@@ -13,7 +13,7 @@ export default function LoginPage() {
     event.preventDefault();
     if (userId === "1" && password === "1212") {
       setError("");
-      router.push("/simulation");
+      router.push("/dashboard");
       return;
     }
     setError("아이디 또는 비밀번호가 올바르지 않습니다.");
@@ -22,8 +22,8 @@ export default function LoginPage() {
   return (
     <main className="page">
       <section className="card">
-        <img src="/logo.svg" alt="Logo" className="login-logo" />
-        <h1 className="title">AI 기반 수업실연 피드백 시스템</h1>
+        <img src="/logo.png" alt="Logo" className="login-logo" />
+        <h1 className="title">AI 기반 발표 피드백 시스템</h1>
         <p className="subtitle">프로토타입</p>
         <form onSubmit={handleSubmit}>
           <div className="field">
