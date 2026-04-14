@@ -2327,6 +2327,52 @@ a {
   flex-shrink: 0;
 }
 
+.feedback-area-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 점수 뱃지 */
+.score-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.score-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  transition: background 150ms ease;
+}
+
+.score-dot.filled {
+  background: #111;
+}
+
+/* 점수에 따라 색상 변경 */
+.score-badge[data-score="1"] .score-dot.filled { background: #ef4444; }
+.score-badge[data-score="2"] .score-dot.filled { background: #f97316; }
+.score-badge[data-score="3"] .score-dot.filled { background: #eab308; }
+.score-badge[data-score="4"] .score-dot.filled { background: #22c55e; }
+.score-badge[data-score="5"] .score-dot.filled { background: #3b82f6; }
+
+.score-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #111;
+  margin-left: 2px;
+}
+
+.score-max {
+  font-weight: 400;
+  color: #999;
+}
+
 /* 영역별 점수 원형 프로그래스 */
 .feedback-area-score {
   position: relative;
@@ -8745,4 +8791,312 @@ a {
 
 .btn-category-toggle:hover {
   background: #f1f5f9;
+}
+
+/* =============================================
+   DASHBOARD V3 - 대시보드 (세련된 재설계)
+============================================= */
+
+.db-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f4f4f4;
+}
+
+/* Topbar */
+.db-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  height: 58px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.db-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.db-topbar-logo {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
+}
+
+.db-topbar-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111;
+  letter-spacing: -0.01em;
+}
+
+.db-topbar-right {
+  position: relative;
+}
+
+.db-account-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: #444;
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.db-account-btn:hover {
+  background: #f5f5f5;
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+.db-account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  min-width: 130px;
+  overflow: hidden;
+  z-index: 100;
+}
+
+.db-account-menu button {
+  width: 100%;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  color: #333;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.db-account-menu button:hover {
+  background: #f5f5f5;
+}
+
+/* Main */
+.db-main {
+  flex: 1;
+  padding: 40px;
+}
+
+.db-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Welcome */
+.db-welcome h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #111;
+  letter-spacing: -0.03em;
+  margin-bottom: 5px;
+}
+
+.db-welcome p {
+  font-size: 14px;
+  color: #777;
+}
+
+/* CTA Card */
+.db-cta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: #111;
+  border-radius: 14px;
+  padding: 26px 30px;
+  cursor: pointer;
+  transition: background 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.db-cta:hover {
+  background: #1c1c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.db-cta-icon {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.db-cta-text {
+  flex: 1;
+}
+
+.db-cta-text h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.db-cta-text p {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.db-cta-arrow {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Feedback Section */
+.db-feedback-section {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 14px;
+  padding: 28px 30px;
+}
+
+.db-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.db-section-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111;
+  letter-spacing: -0.01em;
+}
+
+.db-date-badge {
+  font-size: 12px;
+  font-weight: 500;
+  color: #888;
+  background: #f2f2f2;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+/* Category Block */
+.db-category {
+  padding: 20px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.db-category:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.db-category-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.db-category-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.db-category-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.db-category-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+}
+
+.db-category-short {
+  font-size: 11px;
+  color: #aaa;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Items Grid */
+.db-items {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.db-item {
+  background: #fafafa;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color 150ms ease;
+}
+
+.db-item:hover {
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.db-item-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.db-item-feedback {
+  font-size: 13px;
+  line-height: 1.65;
+  color: #555;
+}
+
+/* Responsive */
+@media (max-width: 720px) {
+  .db-main {
+    padding: 20px;
+  }
+
+  .db-topbar {
+    padding: 0 20px;
+  }
+
+  .db-cta {
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .db-cta-icon {
+    display: none;
+  }
+
+  .db-feedback-section {
+    padding: 20px;
+  }
+
+  .db-items {
+    grid-template-columns: 1fr;
+  }
 }

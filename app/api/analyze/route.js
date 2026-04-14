@@ -1,11 +1,175 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { HumanMessage } from "@langchain/core/messages";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
-import { del } from '@vercel/blob';
+import { del } from "@vercel/blob";
 import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS } from "../../lib/feedbackAreas";
 
-// Pro 플랜: 60초 실행 시간
 export const maxDuration = 60;
 
+// ── 유틸: JSON 추출 ──────────────────────────────────────────────────────────
+function extractJSON(text) {
+    const fenced = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+    return fenced ? fenced[1] : text;
+}
+
+// ── 카테고리별 타임스탬프 + 항목별 점수 분석 ─────────────────────────────────
+async function analyzeCategory(model, fileUri, fileMimeType, category, { topic, audience, duration }) {
+    // 항목별 id를 프롬프트에 명시해 모델이 scores 키로 직접 사용하게 함
+    const rubric = category.items
+        .map((it) => `   - [${it.id}] ${it.label}: ${it.desc}`)
+        .join("\n");
+    const itemLabels = category.items.map((it) => it.label).join(", ");
+    const scoreKeys = category.items.map((it) => `"${it.id}": 1~5 사이 정수`).join(", ");
+
+    const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
+발표 영상에서 "${category.label}" (${category.shortLabel}) 영역만 집중 분석해주세요.
+
+발표 정보:
+- 주제: ${topic || "미지정"}
+- 청중: ${audience || "미지정"}
+- 발표 시간: ${duration || "미지정"}
+
+이 영역의 평가 항목 ([id] 이름: 설명):
+${rubric}
+
+다음 JSON 형식으로만 응답하세요 (순수 JSON, 다른 텍스트 없이):
+{
+  "timestamps": [
+    {
+      "time": "MM:SS",
+      "seconds": 초단위숫자,
+      "category": "${category.label}",
+      "item": "항목명",
+      "feedback": "구체적인 관찰 내용과 피드백"
+    }
+  ],
+  "scores": {
+    ${scoreKeys}
+  }
+}
+
+주의사항:
+1. 이 영역의 항목(${itemLabels})에 대해서만 분석하세요.
+2. timestamps는 영상 전체에서 3~7개를 고르게 선정하세요. 3개 미만이나 7개 초과는 안 됩니다.
+3. item 값은 위 항목명을 철자·공백 그대로 사용하세요.
+4. scores는 각 항목의 발표 전반에 걸친 수행 수준을 1(매우 미흡)~5(매우 우수) 정수로 평가하세요.
+5. 구체적이고 건설적인 피드백을 작성하세요.
+6. 한국어로 응답하세요.`;
+
+    const message = new HumanMessage({
+        content: [
+            { type: "media", mimeType: fileMimeType, fileUri },
+            { type: "text", text: prompt },
+        ],
+    });
+
+    const response = await model.invoke([message]);
+    const text = typeof response.content === "string" ? response.content : (response.content[0]?.text ?? "");
+    const parsed = JSON.parse(extractJSON(text).trim());
+    return {
+        timestamps: Array.isArray(parsed.timestamps) ? parsed.timestamps : [],
+        scores: parsed.scores && typeof parsed.scores === "object" ? parsed.scores : {},
+    };
+}
+
+// ── 종합 요약 분석 ─────────────────────────────────────────────────────────────
+async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { topic, audience, duration }) {
+    const categoryLabels = activeCategories.map((c) => `${c.icon} ${c.label}`).join(", ");
+
+    const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
+발표 영상 전체를 종합 평가하고 요약 피드백을 제공해주세요.
+
+발표 정보:
+- 주제: ${topic || "미지정"}
+- 청중: ${audience || "미지정"}
+- 발표 시간: ${duration || "미지정"}
+- 평가 영역: ${categoryLabels}
+
+다음 JSON 형식으로만 응답하세요 (순수 JSON):
+{
+  "summary": {
+    "overall": "전체 발표에 대한 종합 피드백 (3-4문장)",
+    "strengths": ["강점 1", "강점 2", "강점 3"],
+    "suggestions": ["개선 제안 1", "개선 제안 2", "개선 제안 3"]
+  }
+}
+
+한국어로 응답하세요.`;
+
+    const message = new HumanMessage({
+        content: [
+            { type: "media", mimeType: fileMimeType, fileUri },
+            { type: "text", text: prompt },
+        ],
+    });
+
+    const response = await model.invoke([message]);
+    const text = typeof response.content === "string" ? response.content : (response.content[0]?.text ?? "");
+    const parsed = JSON.parse(extractJSON(text).trim());
+    return parsed.summary ?? { overall: "", strengths: [], suggestions: [] };
+}
+
+// ── 발표 자료 분석 ────────────────────────────────────────────────────────────
+async function analyzeMaterial(model, fileUri, fileMimeType, materialFileUri, materialMimeType) {
+    const prompt = `발표 자료(PDF)와 실제 발표 영상의 정합성을 분석해주세요.
+
+다음 JSON 형식으로만 응답하세요 (순수 JSON):
+{
+  "materialAnalysis": {
+    "overallConsistency": "높음 또는 보통 또는 낮음",
+    "summary": "발표 자료와 실제 발표의 정합성에 대한 2-3문장 평가",
+    "matches": ["자료와 일치한 부분 1", "부분 2"],
+    "deviations": ["자료와 달랐던 부분 (없으면 빈 배열)"],
+    "suggestions": ["자료 활용 개선 제안 1", "제안 2"]
+  }
+}
+
+한국어로 응답하세요.`;
+
+    const message = new HumanMessage({
+        content: [
+            { type: "media", mimeType: fileMimeType, fileUri },
+            { type: "media", mimeType: materialMimeType, fileUri: materialFileUri },
+            { type: "text", text: prompt },
+        ],
+    });
+
+    const response = await model.invoke([message]);
+    const text = typeof response.content === "string" ? response.content : (response.content[0]?.text ?? "");
+    const parsed = JSON.parse(extractJSON(text).trim());
+    return parsed.materialAnalysis ?? null;
+}
+
+// ── 조건 충족 분석 ────────────────────────────────────────────────────────────
+async function analyzeConditions(model, fileUri, fileMimeType, conditions) {
+    const conditionList = conditions.map((c, i) => `${i + 1}. ${c}`).join("\n");
+
+    const prompt = `발표 영상에서 다음 조건들이 충족되었는지 판단해주세요.
+${conditionList}
+
+다음 JSON 형식으로만 응답하세요 (순수 JSON):
+{
+  "conditionsAnalysis": [
+    { "condition": "조건 내용", "fulfilled": true, "evidence": "근거", "timestamp": "MM:SS 또는 null" }
+  ]
+}
+
+한국어로 응답하세요.`;
+
+    const message = new HumanMessage({
+        content: [
+            { type: "media", mimeType: fileMimeType, fileUri },
+            { type: "text", text: prompt },
+        ],
+    });
+
+    const response = await model.invoke([message]);
+    const text = typeof response.content === "string" ? response.content : (response.content[0]?.text ?? "");
+    const parsed = JSON.parse(extractJSON(text).trim());
+    return Array.isArray(parsed.conditionsAnalysis) ? parsed.conditionsAnalysis : [];
+}
+
+// ── 메인 핸들러 ───────────────────────────────────────────────────────────────
 export async function POST(request) {
     let blobUrl = null;
 
@@ -37,15 +201,12 @@ export async function POST(request) {
         }
         const cleanApiKey = apiKey.trim();
 
-        // Blob에서 비디오 다운로드
+        // ── 영상 다운로드 & Gemini 업로드 ────────────────────────────────────
         const videoResponse = await fetch(blobUrl);
-        if (!videoResponse.ok) {
-            throw new Error("Blob에서 비디오를 가져오지 못했습니다.");
-        }
+        if (!videoResponse.ok) throw new Error("Blob에서 비디오를 가져오지 못했습니다.");
         const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
 
         const fileManager = new GoogleAIFileManager(cleanApiKey);
-
         const fs = await import("fs");
         const path = await import("path");
         const os = await import("os");
@@ -60,190 +221,139 @@ export async function POST(request) {
                 mimeType: mimeType || "video/mp4",
                 displayName: fileName,
             });
-        } catch (uploadError) {
+        } finally {
             fs.unlinkSync(tempFilePath);
-            throw new Error("Gemini 업로드 실패: " + uploadError.message);
         }
-        fs.unlinkSync(tempFilePath);
 
-        // 파일 처리 대기
+        // 파일 처리 대기 (1.5초 × 최대 20회 = 30초)
         let file = await fileManager.getFile(uploadResult.file.name);
         let waitCount = 0;
-        while (file.state === "PROCESSING" && waitCount < 10) {
-            await new Promise((r) => setTimeout(r, 3000));
+        while (file.state === "PROCESSING" && waitCount < 20) {
+            await new Promise((r) => setTimeout(r, 1500));
             file = await fileManager.getFile(uploadResult.file.name);
             waitCount++;
         }
         if (file.state === "FAILED") throw new Error("영상 처리에 실패했습니다.");
-        if (file.state === "PROCESSING") throw new Error("영상 처리 시간이 초과되었습니다. 더 짧은 영상을 시도해주세요.");
+        if (file.state === "PROCESSING") throw new Error("영상 처리 시간이 초과되었습니다. 더 짧은 영상을 사용해주세요.");
 
-        // 발표 자료 PDF 처리
+        // ── 발표 자료 업로드 (선택) ───────────────────────────────────────────
         let materialFile = null;
-        let materialTempPath = null;
         if (materialUrl) {
             try {
                 const mRes = await fetch(materialUrl);
                 if (mRes.ok) {
                     const mBuffer = Buffer.from(await mRes.arrayBuffer());
-                    const mFileName = materialUrl.split('/').pop() || 'presentation_material.pdf';
-                    materialTempPath = path.join(tempDir, `mat_${Date.now()}_${mFileName}`);
+                    const mFileName = materialUrl.split("/").pop() || "material.pdf";
+                    const materialTempPath = path.join(tempDir, `mat_${Date.now()}_${mFileName}`);
                     fs.writeFileSync(materialTempPath, mBuffer);
 
-                    const mUpload = await fileManager.uploadFile(materialTempPath, {
-                        mimeType: 'application/pdf',
-                        displayName: mFileName,
-                    });
+                    let mUpload;
+                    try {
+                        mUpload = await fileManager.uploadFile(materialTempPath, {
+                            mimeType: "application/pdf",
+                            displayName: mFileName,
+                        });
+                    } finally {
+                        fs.unlinkSync(materialTempPath);
+                    }
 
                     materialFile = await fileManager.getFile(mUpload.file.name);
                     let mWait = 0;
-                    while (materialFile.state === "PROCESSING" && mWait < 5) {
-                        await new Promise((r) => setTimeout(r, 2000));
+                    while (materialFile.state === "PROCESSING" && mWait < 10) {
+                        await new Promise((r) => setTimeout(r, 1500));
                         materialFile = await fileManager.getFile(mUpload.file.name);
                         mWait++;
                     }
                     if (materialFile.state !== "ACTIVE") materialFile = null;
-                    fs.unlinkSync(materialTempPath);
                 }
             } catch (e) {
                 console.warn("[분석 API] 발표 자료 처리 오류:", e.message);
-                if (materialTempPath && fs.existsSync(materialTempPath)) fs.unlinkSync(materialTempPath);
             }
         }
 
-        const genAI = new GoogleGenerativeAI(cleanApiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        // ── LangChain 모델 초기화 ─────────────────────────────────────────────
+        const model = new ChatGoogleGenerativeAI({
+            model: "gemini-2.5-flash",
+            apiKey: cleanApiKey,
+        });
 
-        // 선택된 항목 정리 (비어있으면 전체 사용)
+        // ── 분석 대상 카테고리/항목 결정 ─────────────────────────────────────
         const activeItemIds = feedbackItems.length > 0
             ? feedbackItems.filter((id) => FEEDBACK_ITEMS_BY_ID[id])
             : ALL_ITEM_IDS;
 
-        // 카테고리 구조로 다시 그룹화
-        const selectedByCategory = FEEDBACK_CATEGORIES.map((cat) => ({
-            ...cat,
-            items: cat.items.filter((it) => activeItemIds.includes(it.id)),
-        })).filter((cat) => cat.items.length > 0);
+        const activeCategories = FEEDBACK_CATEGORIES
+            .map((cat) => ({
+                ...cat,
+                items: cat.items.filter((it) => activeItemIds.includes(it.id)),
+            }))
+            .filter((cat) => cat.items.length > 0);
 
-        const rubricText = selectedByCategory
-            .map((cat) => {
-                const itemLines = cat.items
-                    .map((it) => `   - ${it.label}: ${it.desc}`)
-                    .join("\n");
-                return `■ ${cat.label} (${cat.shortLabel})\n${itemLines}`;
-            })
-            .join("\n\n");
+        const meta = { topic, audience, duration };
 
-        const categoryLabelsJoined = selectedByCategory.map((c) => c.label).join(" / ");
-        const itemLabelsJoined = activeItemIds
-            .map((id) => FEEDBACK_ITEMS_BY_ID[id].label)
-            .join(", ");
+        // ── 카테고리별 + 요약 + 선택 분석을 모두 병렬 실행 ──────────────────
+        console.log(`[분석 API] ${activeCategories.length}개 카테고리 + 요약 병렬 분석 시작`);
 
-        const materialSection = materialFile ? `
+        const categoryPromises = activeCategories.map((cat) =>
+            analyzeCategory(model, file.uri, file.mimeType, cat, meta)
+                .then((result) => {
+                    console.log(`[분석 API] '${cat.label}' 완료 (${result.timestamps.length}개 타임스탬프)`);
+                    return result;
+                })
+                .catch((e) => {
+                    console.error(`[분석 API] '${cat.label}' 실패:`, e.message);
+                    return { timestamps: [], scores: {} };
+                })
+        );
 
-추가 분석 - 발표 자료-발표 정합성:
-함께 제공된 발표 자료(PDF)를 참고하여, 자료와 실제 발표 내용의 정합성을 분석해주세요.
-응답 JSON에 "materialAnalysis" 필드를 포함하세요:
-"materialAnalysis": {
-  "overallConsistency": "높음/보통/낮음 중 하나",
-  "summary": "발표 자료와 실제 발표의 정합성에 대한 2-3문장 평가",
-  "matches": ["자료와 일치한 부분 1", "부분 2"],
-  "deviations": ["자료와 달랐던 부분 1 (없으면 빈 배열)"],
-  "suggestions": ["자료 활용 개선 제안 1", "제안 2"]
-}` : '';
+        const summaryPromise = analyzeSummary(model, file.uri, file.mimeType, activeCategories, meta)
+            .then((s) => { console.log("[분석 API] 요약 완료"); return s; })
+            .catch((e) => { console.error("[분석 API] 요약 실패:", e.message); return { overall: "", strengths: [], suggestions: [] }; });
 
-        const conditionsSection = conditions.length > 0 ? `
+        const materialPromise = materialFile
+            ? analyzeMaterial(model, file.uri, file.mimeType, materialFile.uri, materialFile.mimeType)
+                .then((m) => { console.log("[분석 API] 자료 분석 완료"); return m; })
+                .catch((e) => { console.error("[분석 API] 자료 분석 실패:", e.message); return null; })
+            : Promise.resolve(null);
 
-추가 분석 - 조건 충족 여부:
-다음 조건들이 발표 영상에서 충족되었는지 판단해주세요.
-${conditions.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+        const conditionsPromise = conditions.length > 0
+            ? analyzeConditions(model, file.uri, file.mimeType, conditions)
+                .then((c) => { console.log("[분석 API] 조건 분석 완료"); return c; })
+                .catch((e) => { console.error("[분석 API] 조건 분석 실패:", e.message); return []; })
+            : Promise.resolve([]);
 
-응답 JSON에 "conditionsAnalysis" 필드를 추가하세요:
-"conditionsAnalysis": [
-  { "condition": "조건 내용", "fulfilled": true/false, "evidence": "근거", "timestamp": "MM:SS 또는 null" }
-]` : '';
+        // 전부 병렬로 대기
+        const [categoryResults, summary, materialAnalysis, conditionsAnalysis] = await Promise.all([
+            Promise.all(categoryPromises),
+            summaryPromise,
+            materialPromise,
+            conditionsPromise,
+        ]);
 
-        const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다. 다음 발표 영상을 분석하고 구체적이고 건설적인 피드백을 제공해주세요.
-점수 평가가 아닌, 관찰 기반의 구체적 피드백에 집중해주세요.
+        // ── 결과 병합 ─────────────────────────────────────────────────────────
+        const allTimestamps = categoryResults
+            .flatMap((r) => r.timestamps)
+            .sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0));
 
-발표 정보:
-- 주제: ${topic || "미지정"}
-- 청중: ${audience || "미지정"}
-- 발표 시간: ${duration || "미지정"}
+        // 카테고리별 scores를 하나의 객체로 합침 { item_id: score, ... }
+        const scores = Object.assign({}, ...categoryResults.map((r) => r.scores));
 
-평가 루브릭 (선택된 카테고리/항목만 평가):
-${rubricText}
+        const analysisResult = { timestamps: allTimestamps, scores, summary };
+        if (materialAnalysis) analysisResult.materialAnalysis = materialAnalysis;
+        if (conditionsAnalysis.length > 0) analysisResult.conditionsAnalysis = conditionsAnalysis;
 
-다음 JSON 형식으로만 응답해주세요 (다른 텍스트 없이, 순수 JSON):
+        console.log(`[분석 API] 완료 — 총 ${allTimestamps.length}개 타임스탬프`);
 
-{
-  "timestamps": [
-    {
-      "time": "MM:SS",
-      "seconds": 초단위숫자,
-      "category": "관련 카테고리 (${selectedByCategory.map((c) => c.label).join(" / ")} 중 하나를 정확히 사용)",
-      "item": "관련 세부 항목 (${itemLabelsJoined} 중 하나를 정확히 사용)",
-      "feedback": "해당 시점에서 관찰된 구체적인 내용과 피드백"
-    }
-  ],
-  "summary": {
-    "overall": "전체 발표에 대한 종합 피드백 (3-4문장)",
-    "strengths": ["강점 1", "강점 2", "강점 3"],
-    "suggestions": ["개선 제안 1", "개선 제안 2", "개선 제안 3"]
-  }
-}
-
-분석 시 주의사항:
-1. timestamps는 영상 전체에서 10-15개 주요 시점을 고르게 선정하세요.
-2. seconds 필드는 해당 시점의 초 단위 숫자입니다 (예: "02:30"은 150).
-3. ⚠️ 매우 중요: 선택된 모든 세부 항목(${itemLabelsJoined})마다 최소 1개 이상의 타임스탬프 피드백을 포함해야 합니다. 어떤 항목도 빠뜨리지 마세요.
-4. category와 item 값은 반드시 위에 명시된 문자열을 그대로 사용하세요 (철자·공백 일치).
-5. 피드백은 구체적이고 건설적으로 작성하세요. "잘했습니다" 같은 모호한 표현은 피하세요.
-6. 강점과 개선점을 균형있게 제시하세요.
-7. 한국어로 응답하세요.${materialSection}${conditionsSection}`;
-
-        const contentParts = [
-            { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
-        ];
-        if (materialFile) {
-            contentParts.push({ fileData: { mimeType: materialFile.mimeType, fileUri: materialFile.uri } });
-        }
-        contentParts.push({ text: prompt });
-
-        const result = await model.generateContent(contentParts);
-        const responseText = result.response.text();
-
-        let analysisResult;
-        try {
-            const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
-                responseText.match(/```\s*([\s\S]*?)\s*```/);
-            const jsonString = jsonMatch ? jsonMatch[1] : responseText;
-            analysisResult = JSON.parse(jsonString.trim());
-        } catch (parseError) {
-            console.error("[분석 API] JSON 파싱 오류:", parseError);
-            analysisResult = {
-                timestamps: [],
-                summary: {
-                    overall: "분석 결과 파싱에 문제가 발생했습니다. 다시 시도해주세요.",
-                    strengths: [],
-                    suggestions: [],
-                },
-            };
-        }
-
-        // 파일 정리
-        try { await fileManager.deleteFile(file.name); } catch (e) {}
-        if (materialFile) {
-            try { await fileManager.deleteFile(materialFile.name); } catch (e) {}
-        }
-        try { await del(blobUrl); } catch (e) {}
+        // ── 파일 정리 ─────────────────────────────────────────────────────────
+        try { await fileManager.deleteFile(file.name); } catch (_) {}
+        if (materialFile) { try { await fileManager.deleteFile(materialFile.name); } catch (_) {} }
+        try { await del(blobUrl); } catch (_) {}
 
         return Response.json(analysisResult);
 
     } catch (error) {
         console.error("[분석 API] 오류:", error);
-        if (blobUrl) {
-            try { await del(blobUrl); } catch (e) {}
-        }
+        if (blobUrl) { try { await del(blobUrl); } catch (_) {} }
         return Response.json(
             { error: "영상 분석 중 오류가 발생했습니다: " + error.message },
             { status: 500 }

@@ -15,7 +15,7 @@ export async function POST(request) {
         }
 
         const genAI = new GoogleGenerativeAI(apiKey.trim());
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
         // 분석 결과 컨텍스트 구성
         const { summary = {}, timestamps = [] } = analysisContext;

@@ -137,7 +137,7 @@ export default function AnalysisPage() {
         );
     }
 
-    const { timestamps = [], summary = {}, materialAnalysis = null, conditionsAnalysis = null } = analysisData || {};
+    const { timestamps = [], scores = {}, summary = {}, materialAnalysis = null, conditionsAnalysis = null } = analysisData || {};
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -225,6 +225,7 @@ export default function AnalysisPage() {
                                     <div className="feedback-areas-grid">
                                         {catItems.map((item) => {
                                             const itemTimestamps = matchTimestampsToItem(item.label);
+                                            const score = scores[item.id];
                                             return (
                                                 <div key={item.id} className="feedback-area-container">
                                                     <div className="feedback-area-header">
@@ -232,7 +233,17 @@ export default function AnalysisPage() {
                                                             <h4>{item.label}</h4>
                                                             <span className="feedback-area-desc">{item.desc}</span>
                                                         </div>
-                                                        <span className="feedback-area-count">{itemTimestamps.length}개</span>
+                                                        <div className="feedback-area-header-right">
+                                                            {score != null && (
+                                                                <div className="score-badge" data-score={score} title={`${score}/5점`}>
+                                                                    {[1,2,3,4,5].map((n) => (
+                                                                        <span key={n} className={`score-dot ${n <= score ? "filled" : ""}`} />
+                                                                    ))}
+                                                                    <span className="score-value">{score}<span className="score-max">/5</span></span>
+                                                                </div>
+                                                            )}
+                                                            <span className="feedback-area-count">{itemTimestamps.length}개</span>
+                                                        </div>
                                                     </div>
 
                                                     <div className="feedback-area-content">
