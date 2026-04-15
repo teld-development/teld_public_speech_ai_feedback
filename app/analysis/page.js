@@ -141,11 +141,37 @@ export default function AnalysisPage() {
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
-    // 항목별로 타임스탬프 매칭 (item 또는 category 문자열 비교)
-    const matchTimestampsToItem = (itemLabel) => {
+    // 항목별로 타임스탬프 매칭 (공백·특수문자 정규화 후 비교)
+    const normalizeLabel = (s) => (s || "").replace(/\s+/g, "").replace(/[-–—_]/g, "").toLowerCase();
+    const matchTimestampsToItem = (item, categoryLabel) => {
+        const norm = normalizeLabel(item.label);
+        const normId = item.id.replace(/_/g, "").toLowerCase();
+        // 카테고리명이 있으면 같은 카테고리 타임스탬프만 대상으로 하되, 없으면 전체 대상
+        const pool = categoryLabel
+            ? timestamps.filter((t) => !t.category || normalizeLabel(t.category) === normalizeLabel(categoryLabel))
+            : timestamps;
+        const matched = pool.filter((t) => {
+            if (!t || !t.item) return false;
+            const tNorm = normalizeLabel(t.item);
+            // 완전 일치 (trim)
+            if (t.item.trim() === item.label) return true;
+            // 정규화 후 비교 (공백·대시 차이 무시)
+            if (tNorm === norm) return true;
+            // 포함 관계 (모델이 설명을 붙인 경우 대비)
+            if (tNorm.includes(norm) || norm.includes(tNorm)) return true;
+            // fallback: item ID 기반 매칭 (모델이 영어 ID를 반환한 경우)
+            if (tNorm === normId || tNorm.includes(normId) || normId.includes(tNorm)) return true;
+            return false;
+        });
+        // 카테고리 필터링으로 매칭된 경우를 우선하되, 없으면 전체에서 재시도
+        if (matched.length > 0 || !categoryLabel) return matched;
         return timestamps.filter((t) => {
-            if (!t) return false;
-            if (t.item && t.item.trim() === itemLabel) return true;
+            if (!t || !t.item) return false;
+            const tNorm = normalizeLabel(t.item);
+            if (t.item.trim() === item.label) return true;
+            if (tNorm === norm) return true;
+            if (tNorm.includes(norm) || norm.includes(tNorm)) return true;
+            if (tNorm === normId || tNorm.includes(normId) || normId.includes(tNorm)) return true;
             return false;
         });
     };
@@ -224,7 +250,7 @@ export default function AnalysisPage() {
                                     </div>
                                     <div className="feedback-areas-grid">
                                         {catItems.map((item) => {
-                                            const itemTimestamps = matchTimestampsToItem(item.label);
+                                            const itemTimestamps = matchTimestampsToItem(item, cat.label);
                                             const score = scores[item.id];
                                             return (
                                                 <div key={item.id} className="feedback-area-container">

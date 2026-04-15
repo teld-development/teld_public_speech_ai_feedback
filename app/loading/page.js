@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { upload } from "@vercel/blob/client";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -82,29 +81,43 @@ export default function LoadingPage() {
                 const blob = new Blob([buffer], { type });
                 const file = new File([blob], name, { type });
 
-                // ===== Step 1: Vercel Blob에 직접 업로드 (클라이언트 → Blob) =====
+                // ===== Step 1: API 경유 서버 업로드 (CORS 우회) =====
                 setCurrentStep(0);
                 setProgress(5);
 
-                console.log("[Loading] Vercel Blob 직접 업로드 시작...");
+                console.log("[Loading] 서버 경유 업로드 시작...");
 
                 let blobResult;
                 try {
-                    blobResult = await upload(file.name, file, {
-                        access: 'public',
-                        handleUploadUrl: '/api/upload-blob',
-                        onUploadProgress: (progressEvent) => {
-                            const pct = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-                            setUploadProgress(pct);
-                            setProgress(Math.min(5 + Math.round(pct * 0.2), 25)); // 5% ~ 25%
-                        },
+                    blobResult = await new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', `/api/upload-blob?filename=${encodeURIComponent(file.name)}`);
+                        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+                        xhr.upload.addEventListener('progress', (e) => {
+                            if (e.lengthComputable) {
+                                const pct = Math.round((e.loaded / e.total) * 100);
+                                setUploadProgress(pct);
+                                setProgress(Math.min(5 + Math.round(pct * 0.2), 25));
+                            }
+                        });
+                        xhr.onload = () => {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                resolve(JSON.parse(xhr.responseText));
+                            } else {
+                                let msg = `HTTP ${xhr.status}`;
+                                try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+                                reject(new Error(msg));
+                            }
+                        };
+                        xhr.onerror = () => reject(new Error('네트워크 오류가 발생했습니다.'));
+                        xhr.send(file);
                     });
                 } catch (uploadError) {
-                    console.error("[Loading] Blob 업로드 실패:", uploadError);
+                    console.error("[Loading] 업로드 실패:", uploadError);
                     throw new Error("영상 업로드에 실패했습니다: " + uploadError.message);
                 }
 
-                console.log("[Loading] Blob 업로드 완료:", blobResult.url);
+                console.log("[Loading] 업로드 완료:", blobResult.url);
 
                 // ===== 발표 자료 업로드 (있는 경우만) =====
                 let materialUrl = null;
@@ -119,10 +132,16 @@ export default function LoadingPage() {
                         const materialBlob = new Blob([bytes], { type: prepareData.presentationMaterial.type });
                         const materialFile = new File([materialBlob], prepareData.presentationMaterial.name, { type: prepareData.presentationMaterial.type });
 
-                        const materialResult = await upload(materialFile.name, materialFile, {
-                            access: 'public',
-                            handleUploadUrl: '/api/upload-blob',
-                        });
+                        const matResponse = await fetch(
+                            `/api/upload-blob?filename=${encodeURIComponent(materialFile.name)}`,
+                            {
+                                method: 'POST',
+                                headers: { 'Content-Type': materialFile.type || 'application/pdf' },
+                                body: materialFile,
+                            }
+                        );
+                        if (!matResponse.ok) throw new Error(`HTTP ${matResponse.status}`);
+                        const materialResult = await matResponse.json();
                         materialUrl = materialResult.url;
                         console.log("[Loading] 발표 자료 업로드 완료:", materialUrl);
                     } catch (lpError) {

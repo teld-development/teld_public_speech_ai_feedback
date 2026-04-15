@@ -16,10 +16,12 @@ function extractJSON(text) {
 async function analyzeCategory(model, fileUri, fileMimeType, category, { topic, audience, duration }) {
     // 항목별 id를 프롬프트에 명시해 모델이 scores 키로 직접 사용하게 함
     const rubric = category.items
-        .map((it) => `   - [${it.id}] ${it.label}: ${it.desc}`)
+        .map((it) => `   - ${it.label}: ${it.desc}`)
         .join("\n");
     const itemLabels = category.items.map((it) => it.label).join(", ");
     const scoreKeys = category.items.map((it) => `"${it.id}": 1~5 사이 정수`).join(", ");
+    const minTs = Math.max(3, category.items.length);
+    const maxTs = Math.max(minTs, 7);
 
     const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
 발표 영상에서 "${category.label}" (${category.shortLabel}) 영역만 집중 분석해주세요.
@@ -50,8 +52,8 @@ ${rubric}
 
 주의사항:
 1. 이 영역의 항목(${itemLabels})에 대해서만 분석하세요.
-2. timestamps는 영상 전체에서 3~7개를 고르게 선정하세요. 3개 미만이나 7개 초과는 안 됩니다.
-3. item 값은 위 항목명을 철자·공백 그대로 사용하세요.
+2. timestamps는 영상 전체에서 ${minTs}~${maxTs}개를 고르게 선정하세요. 각 평가 항목마다 최소 1개 이상 포함하세요.
+3. item 값은 위 항목명을 철자·공백·부호까지 완전히 동일하게 사용하세요. 영어나 약어를 사용하지 마세요.
 4. scores는 각 항목의 발표 전반에 걸친 수행 수준을 1(매우 미흡)~5(매우 우수) 정수로 평가하세요.
 5. 구체적이고 건설적인 피드백을 작성하세요.
 6. 한국어로 응답하세요.`;
@@ -65,7 +67,9 @@ ${rubric}
 
     const response = await model.invoke([message]);
     const text = typeof response.content === "string" ? response.content : (response.content[0]?.text ?? "");
-    const parsed = JSON.parse(extractJSON(text).trim());
+    const rawJson = extractJSON(text).trim();
+    console.log(`[분석 API] '${category.label}' 원시 응답 (앞 800자):`, rawJson.slice(0, 800));
+    const parsed = JSON.parse(rawJson);
     return {
         timestamps: Array.isArray(parsed.timestamps) ? parsed.timestamps : [],
         scores: parsed.scores && typeof parsed.scores === "object" ? parsed.scores : {},
@@ -273,7 +277,7 @@ export async function POST(request) {
 
         // ── LangChain 모델 초기화 ─────────────────────────────────────────────
         const model = new ChatGoogleGenerativeAI({
-            model: "gemini-2.5-flash",
+            model: "gemini-3-flash-preview",
             apiKey: cleanApiKey,
         });
 
@@ -345,15 +349,15 @@ export async function POST(request) {
         console.log(`[분석 API] 완료 — 총 ${allTimestamps.length}개 타임스탬프`);
 
         // ── 파일 정리 ─────────────────────────────────────────────────────────
-        try { await fileManager.deleteFile(file.name); } catch (_) {}
-        if (materialFile) { try { await fileManager.deleteFile(materialFile.name); } catch (_) {} }
-        try { await del(blobUrl); } catch (_) {}
+        try { await fileManager.deleteFile(file.name); } catch (_) { }
+        if (materialFile) { try { await fileManager.deleteFile(materialFile.name); } catch (_) { } }
+        try { await del(blobUrl); } catch (_) { }
 
         return Response.json(analysisResult);
 
     } catch (error) {
         console.error("[분석 API] 오류:", error);
-        if (blobUrl) { try { await del(blobUrl); } catch (_) {} }
+        if (blobUrl) { try { await del(blobUrl); } catch (_) { } }
         return Response.json(
             { error: "영상 분석 중 오류가 발생했습니다: " + error.message },
             { status: 500 }
