@@ -2,15 +2,25 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
 
 const AUDIENCE_OPTIONS = [
-    "일반 대중",
-    "전문가/업계 관계자",
-    "학생/교육 대상",
-    "임원/의사결정자",
-    "내부 동료",
+    "교수님",
+    "학생들",
+    "학회/세미나 청중",
     "기타",
+];
+
+const PRESENTATION_TYPE_OPTIONS = [
+    {
+        id: "설득",
+        label: "설득",
+        desc: "청중의 생각이나 행동을 이끌어내는 것이 목적인 발표",
+    },
+    {
+        id: "설명",
+        label: "설명",
+        desc: "정보나 개념을 청중에게 정확히 전달하는 것이 목적인 발표",
+    },
 ];
 
 export default function PreparePage() {
@@ -20,10 +30,13 @@ export default function PreparePage() {
     const [audience, setAudience] = useState("");
     const [duration, setDuration] = useState("");
     const [presentationMaterial, setPresentationMaterial] = useState(null);
-    const [conditions, setConditions] = useState([]);
 
-    const [selectedItems, setSelectedItems] = useState([]);
+    const [presentationType, setPresentationType] = useState("");
     const [consentAnalysis, setConsentAnalysis] = useState(false);
+
+    const [showNextModal, setShowNextModal] = useState(false);
+    const [simulationLoading, setSimulationLoading] = useState(false);
+    const [simulationError, setSimulationError] = useState("");
 
     useEffect(() => {
         const saved = sessionStorage.getItem("prepareData");
@@ -33,49 +46,21 @@ export default function PreparePage() {
                 if (data.topic) setTopic(data.topic);
                 if (data.audience) setAudience(data.audience);
                 if (data.duration) setDuration(data.duration);
-                if (data.feedbackItems) setSelectedItems(data.feedbackItems);
-                if (data.conditions) setConditions(data.conditions);
+                if (data.presentationType) setPresentationType(data.presentationType);
             } catch (err) {
                 console.error("prepareData 복원 실패:", err);
             }
         }
     }, []);
 
-    const toggleItem = (id) => {
-        setSelectedItems((prev) =>
-            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-        );
-    };
-
-    const toggleCategory = (categoryId) => {
-        const cat = FEEDBACK_CATEGORIES.find((c) => c.id === categoryId);
-        const ids = cat.items.map((i) => i.id);
-        const allSelected = ids.every((id) => selectedItems.includes(id));
-        setSelectedItems((prev) =>
-            allSelected ? prev.filter((x) => !ids.includes(x)) : [...new Set([...prev, ...ids])]
-        );
-    };
-
     const handleFileChange = (e) => {
         const file = e.target.files?.[0];
         if (file) setPresentationMaterial(file);
     };
 
-    const addCondition = () => {
-        if (conditions.length < 6) setConditions([...conditions, ""]);
-    };
-    const removeCondition = (i) => setConditions(conditions.filter((_, idx) => idx !== i));
-    const updateCondition = (i, v) => {
-        const next = [...conditions];
-        next[i] = v;
-        setConditions(next);
-    };
+    const canProceed = topic.trim() && audience && consentAnalysis && presentationType;
 
-    const canProceed = topic.trim() && audience && consentAnalysis && selectedItems.length > 0;
-
-    const handleNext = async () => {
-        if (!canProceed) return;
-
+    const buildPrepareData = async () => {
         let materialData = null;
         if (presentationMaterial) {
             const buffer = await presentationMaterial.arrayBuffer();
@@ -89,20 +74,48 @@ export default function PreparePage() {
             };
         }
 
-        const validConditions = conditions.filter((c) => c.trim() !== "");
-        sessionStorage.setItem(
-            "prepareData",
-            JSON.stringify({
-                topic: topic.trim(),
-                audience,
-                duration,
-                feedbackItems: selectedItems,
-                presentationMaterial: materialData,
-                conditions: validConditions,
-            })
-        );
+        return {
+            topic: topic.trim(),
+            audience,
+            duration,
+            presentationType,
+            presentationMaterial: materialData,
+        };
+    };
+
+    const handleNext = () => {
+        if (!canProceed) return;
+        setSimulationError("");
+        setShowNextModal(true);
+    };
+
+    const closeNextModal = () => {
+        if (simulationLoading) return;
+        setShowNextModal(false);
+    };
+
+    const handleVideoUpload = async () => {
+        if (!canProceed) return;
+        const data = await buildPrepareData();
+        sessionStorage.setItem("prepareData", JSON.stringify(data));
         router.push("/upload");
     };
+
+    const handleSimulation = async () => {
+        if (!canProceed || simulationLoading) return;
+        setSimulationLoading(true);
+        try {
+            const data = await buildPrepareData();
+            sessionStorage.setItem("prepareData", JSON.stringify(data));
+            router.push("/simulation/setup");
+        } catch (err) {
+            console.error("시뮬레이션 준비 실패:", err);
+            setSimulationError("준비 중 오류가 발생했습니다. 다시 시도해주세요.");
+        } finally {
+            setSimulationLoading(false);
+        }
+    };
+
 
     return (
         <main className="prepare-page">
@@ -169,86 +182,28 @@ export default function PreparePage() {
                         <span className="form-hint">발표 자료(PDF)를 업로드하면 자료와 발표 내용의 정합성을 함께 분석합니다.</span>
                     </div>
 
-                    <div className="form-group">
-                        <div className="conditions-header">
-                            <label>분석 조건 (선택)</label>
-                            {conditions.length < 6 && (
-                                <button type="button" className="btn-add-condition" onClick={addCondition}>
-                                    + 조건 추가
-                                </button>
-                            )}
-                        </div>
-                        <span className="form-hint">발표에서 확인하고 싶은 특정 조건의 충족 여부를 분석합니다. (최대 6개)</span>
-
-                        {conditions.length > 0 && (
-                            <div className="conditions-list">
-                                {conditions.map((condition, index) => (
-                                    <div key={index} className="condition-item">
-                                        <span className="condition-number">{index + 1}</span>
-                                        <input
-                                            type="text"
-                                            placeholder="예: 핵심 메시지를 세 번 이상 반복했는가"
-                                            value={condition}
-                                            onChange={(e) => updateCondition(index, e.target.value)}
-                                            className="condition-input"
-                                        />
-                                        <button
-                                            type="button"
-                                            className="btn-remove-condition"
-                                            onClick={() => removeCondition(index)}
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
                 </section>
 
                 <section className="prepare-section">
-                    <h2>피드백 영역 선택 *</h2>
-                    <p className="section-desc">피드백 받고 싶은 항목을 선택해주세요. (1개 이상)</p>
+                    <h2>발표 유형 선택 *</h2>
+                    <p className="section-desc">발표 유형에 따라 평가 기준과 피드백이 달라집니다!</p>
 
-                    {FEEDBACK_CATEGORIES.map((cat) => {
-                        const ids = cat.items.map((i) => i.id);
-                        const allSelected = ids.every((id) => selectedItems.includes(id));
-                        return (
-                            <div key={cat.id} className="feedback-category-block">
-                                <div className="feedback-category-title">
-                                    <span className="category-icon">{cat.icon}</span>
-                                    <div>
-                                        <h4>{cat.label}</h4>
-                                        <span className="category-short">{cat.shortLabel}</span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        className="btn-category-toggle"
-                                        onClick={() => toggleCategory(cat.id)}
-                                    >
-                                        {allSelected ? "전체 해제" : "전체 선택"}
-                                    </button>
-                                </div>
-                                <div className="feedback-grid">
-                                    {cat.items.map((item) => (
-                                        <button
-                                            key={item.id}
-                                            type="button"
-                                            className={`feedback-chip ${selectedItems.includes(item.id) ? "selected" : ""}`}
-                                            onClick={() => toggleItem(item.id)}
-                                            title={item.desc}
-                                        >
-                                            {selectedItems.includes(item.id) && (
-                                                <span className="chip-check">✓</span>
-                                            )}
-                                            <span className="chip-label">{item.label}</span>
-                                            <span className="chip-desc">{item.desc}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        );
-                    })}
+                    <div className="presentation-type-grid">
+                        {PRESENTATION_TYPE_OPTIONS.map((opt) => (
+                            <button
+                                key={opt.id}
+                                type="button"
+                                className={`presentation-type-chip ${presentationType === opt.id ? "selected" : ""}`}
+                                onClick={() => setPresentationType(opt.id)}
+                            >
+                                {presentationType === opt.id && (
+                                    <span className="chip-check">✓</span>
+                                )}
+                                <span className="chip-label">{opt.label}</span>
+                                <span className="chip-desc">{opt.desc}</span>
+                            </button>
+                        ))}
+                    </div>
                 </section>
 
                 <section className="prepare-section consent-section">
@@ -285,10 +240,70 @@ export default function PreparePage() {
                         disabled={!canProceed}
                         onClick={handleNext}
                     >
-                        다음: 영상 업로드
+                        다음 단계로
                     </button>
                 </div>
             </div>
+
+            {showNextModal && (
+                <div className="next-modal-backdrop" onClick={closeNextModal}>
+                    <div
+                        className="next-modal"
+                        onClick={(e) => e.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                    >
+                        <h3 className="next-modal-title">분석 방식 선택</h3>
+                                <p className="next-modal-desc">
+                                    발표를 어떤 방식으로 진행하시겠어요?
+                                </p>
+                                <div className="next-modal-options">
+                                    <button
+                                        type="button"
+                                        className="next-modal-option"
+                                        onClick={handleSimulation}
+                                        disabled={simulationLoading}
+                                    >
+                                        <span className="next-modal-option-icon">🎮</span>
+                                        <span className="next-modal-option-title">시뮬레이션</span>
+                                        <span className="next-modal-option-desc">
+                                            Unity 가상 발표 환경에서 진행합니다.
+                                        </span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="next-modal-option"
+                                        onClick={handleVideoUpload}
+                                        disabled={simulationLoading}
+                                    >
+                                        <span className="next-modal-option-icon">🎥</span>
+                                        <span className="next-modal-option-title">영상 업로드하기</span>
+                                        <span className="next-modal-option-desc">
+                                            촬영한 발표 영상을 업로드해 분석합니다.
+                                        </span>
+                                    </button>
+                                </div>
+
+                                {simulationLoading && (
+                                    <p className="next-modal-status">준비 중…</p>
+                                )}
+                                {simulationError && (
+                                    <p className="next-modal-error">{simulationError}</p>
+                                )}
+
+                                <div className="next-modal-footer">
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        onClick={closeNextModal}
+                                        disabled={simulationLoading}
+                                    >
+                                        닫기
+                                    </button>
+                                </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
