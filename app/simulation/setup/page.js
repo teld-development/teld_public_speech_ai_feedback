@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "../../lib/firebase";
-import { convertAndUploadPdf } from "../../lib/pdfToImages";
+import { db } from "../../lib/firebase";
+import { useAuth } from "../../lib/AuthProvider";
+import { convertAndUploadPdfFromUrl } from "../../lib/pdfToImages";
 
 const generateSimulationCode = () =>
     String(Math.floor(100000 + Math.random() * 900000));
@@ -111,6 +111,7 @@ function ratioToStudents(ratios) {
 
 export default function SimulationSetupPage() {
     const router = useRouter();
+    const { user, authLoading } = useAuth();
 
     const [prepareData, setPrepareData] = useState(null);
     const [crowdSize, setCrowdSize] = useState("");
@@ -142,15 +143,23 @@ export default function SimulationSetupPage() {
     const [error, setError] = useState("");
 
     useEffect(() => {
+        if (!authLoading && !user) {
+            router.replace("/");
+        }
+    }, [authLoading, router, user]);
+
+    useEffect(() => {
+        if (authLoading) return;
+        if (!user) return;
         const saved = sessionStorage.getItem("prepareData");
         if (!saved) { router.replace("/prepare"); return; }
         try { setPrepareData(JSON.parse(saved)); }
         catch { router.replace("/prepare"); }
-    }, [router]);
+    }, [authLoading, router, user]);
 
     const totalRatio = Object.values(ratios).reduce((s, v) => s + v, 0);
     const ratiosValid = totalRatio === 100;
-    const canStart = crowdSize && ratiosValid;
+    const canStart = crowdSize && ratiosValid && user;
 
     const handleRatioChange = (key, value) => {
         const num = Math.max(0, Math.min(100, parseInt(value, 10) || 0));
@@ -183,31 +192,33 @@ export default function SimulationSetupPage() {
         try {
             const code = generateSimulationCode();
 
-            // 1) PDF 업로드 + 이미지 변환 (있으면)
-            // ★ 새 흐름: 웹에서 바로 PDF → PNG로 변환 후 Storage에 업로드
-            //    유니티는 이미지 URL만 다운로드 (백엔드 변환 라운드트립 제거 → 시작 속도 대폭 개선)
+            // 1) PDF는 prepare 단계에서 이미 Firebase Storage에 업로드됨.
+            //    여기서는 URL을 Firestore에 넘기고, Unity가 쓸 슬라이드 이미지 URL만 선택적으로 생성함.
             let materialMeta = null;
             let pdfUrl = "";
             let slideImageUrls = [];
-            if (prepareData?.presentationMaterial?.base64) {
+            if (prepareData?.presentationMaterial?.url) {
                 const mat = prepareData.presentationMaterial;
-
-                // PDF 원본도 Storage에 업로드 (분석/리뷰 시 원본 보존용)
-                const byteChars = atob(mat.base64);
-                const bytes = new Uint8Array(byteChars.length);
-                for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-                const blob = new Blob([bytes], { type: mat.type });
-                const storageRef = ref(storage, `simulations/${code}/${mat.name}`);
-                await uploadBytes(storageRef, blob);
-                pdfUrl = await getDownloadURL(storageRef);
-                materialMeta = { name: mat.name, type: mat.type, url: pdfUrl };
+                pdfUrl = mat.url;
+                materialMeta = {
+                    name: mat.name,
+                    type: mat.type,
+                    size: mat.size || null,
+                    url: mat.url,
+                    path: mat.path || "",
+                    ownerUid: mat.ownerUid || user.uid,
+                    ownerEmail: mat.ownerEmail || user.email || "",
+                };
 
                 // ★ PDF → 이미지 변환 + 업로드 (비동기, 1.5x 배율)
                 try {
                     setLoadingMsg("PDF를 슬라이드 이미지로 변환 중...");
-                    const result = await convertAndUploadPdf(mat.base64, code, (p) => {
-                        const phaseKr = p.phase === "convert" ? "변환" : "업로드";
-                        setLoadingMsg(`슬라이드 ${phaseKr} 중... (${p.current}/${p.total})`);
+                    const result = await convertAndUploadPdfFromUrl(mat.url, code, {
+                        ownerUid: user.uid,
+                        onProgress: (p) => {
+                            const phaseKr = p.phase === "convert" ? "변환" : "업로드";
+                            setLoadingMsg(`슬라이드 ${phaseKr} 중... (${p.current}/${p.total})`);
+                        },
                     });
                     slideImageUrls = result.slideImageUrls;
                     console.log(`[Setup] PDF 이미지 변환 완료: ${slideImageUrls.length}장`);
@@ -227,6 +238,8 @@ export default function SimulationSetupPage() {
             const { presentationMaterial: _mat, ...meta } = prepareData;
             await setDoc(doc(db, "simulations", code), {
                 ...meta,
+                ownerUid: user.uid,
+                ownerEmail: user.email || "",
                 presentationMaterial: materialMeta,
                 simulation: {
                     crowdSize,
@@ -271,6 +284,8 @@ export default function SimulationSetupPage() {
                         // 백엔드 코드로 새 Firestore 문서 만들기
                         await setDoc(doc(db, "simulations", backendData.accessCode), {
                             ...meta,
+                            ownerUid: user.uid,
+                            ownerEmail: user.email || "",
                             presentationMaterial: materialMeta,
                             simulation: {
                                 crowdSize,

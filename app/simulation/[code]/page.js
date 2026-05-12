@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
+import { useAuth } from "../../lib/AuthProvider";
 import { adaptUnityResultToAnalysis } from "../../lib/unityResultAdapter";
 
 const STATUS_LABEL = {
@@ -15,6 +16,7 @@ const STATUS_LABEL = {
 export default function SimulationWaitingPage({ params }) {
     const router = useRouter();
     const { code } = params;
+    const { user, authLoading } = useAuth();
 
     const [status, setStatus] = useState("waiting");
     const [error, setError] = useState("");
@@ -27,6 +29,11 @@ export default function SimulationWaitingPage({ params }) {
     }, []);
 
     useEffect(() => {
+        if (authLoading) return;
+        if (!user) {
+            router.replace("/");
+            return;
+        }
         if (!code) return;
 
         const ref = doc(db, "simulations", code);
@@ -63,7 +70,7 @@ export default function SimulationWaitingPage({ params }) {
         );
 
         return () => unsub();
-    }, [code, router]);
+    }, [authLoading, code, router, user]);
 
     const formatTime = (s) => {
         const m = Math.floor(s / 60);

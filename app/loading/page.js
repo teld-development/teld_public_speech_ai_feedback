@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "../lib/AuthProvider";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -52,6 +53,7 @@ const ANALYSIS_STEPS = [
 
 export default function LoadingPage() {
     const router = useRouter();
+    const { user, authLoading } = useAuth();
     const [currentStep, setCurrentStep] = useState(0);
     const [progress, setProgress] = useState(0);
     const [error, setError] = useState("");
@@ -59,6 +61,12 @@ export default function LoadingPage() {
     const [uploadProgress, setUploadProgress] = useState(0);
 
     useEffect(() => {
+        if (authLoading) return;
+        if (!user) {
+            router.replace("/");
+            return;
+        }
+
         // 시간 카운터
         const timer = setInterval(() => {
             setElapsedTime((prev) => prev + 1);
@@ -121,7 +129,10 @@ export default function LoadingPage() {
 
                 // ===== 발표 자료 업로드 (있는 경우만) =====
                 let materialUrl = null;
-                if (prepareData.presentationMaterial) {
+                if (prepareData.presentationMaterial?.url) {
+                    materialUrl = prepareData.presentationMaterial.url;
+                    console.log("[Loading] 발표 자료 Firebase Storage URL 사용:", materialUrl);
+                } else if (prepareData.presentationMaterial?.base64) {
                     console.log("[Loading] 발표 자료 업로드 시작...");
                     try {
                         const binaryString = atob(prepareData.presentationMaterial.base64);
@@ -225,7 +236,7 @@ export default function LoadingPage() {
         startAnalysis();
 
         return () => clearInterval(timer);
-    }, [router]);
+    }, [authLoading, router, user]);
 
     const formatTime = (seconds) => {
         const mins = Math.floor(seconds / 60);

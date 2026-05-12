@@ -166,6 +166,12 @@ a {
   transform: translateY(-1px);
 }
 
+.button:disabled {
+  background: var(--subtle);
+  cursor: not-allowed;
+  transform: none;
+}
+
 .button:active {
   transform: translateY(0);
 }
@@ -9580,6 +9586,7 @@ a {
   display: flex;
   align-items: center;
   gap: 5px;
+  max-width: min(260px, 48vw);
   padding: 7px 14px;
   font-family: inherit;
   font-size: 13px;
@@ -9590,6 +9597,9 @@ a {
   border-radius: 8px;
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .db-account-btn:hover {

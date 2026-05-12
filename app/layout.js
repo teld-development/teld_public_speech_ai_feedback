@@ -1,5 +1,6 @@
 import "./globals.css";
 import { domExtensionPatch } from "./dom-extension-patch";
+import { AuthProvider } from "./lib/AuthProvider";
 
 export const metadata = {
   title: "AI 기반 발표 피드백 시스템",
@@ -20,7 +21,9 @@ export default function RootLayout({ children }) {
           dangerouslySetInnerHTML={{ __html: domExtensionPatch }}
         />
       </head>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

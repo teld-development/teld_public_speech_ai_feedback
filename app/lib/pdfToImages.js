@@ -72,6 +72,13 @@ export async function pdfBase64ToImageBlobs(base64, options) {
     return pdfToImageBlobs(bytes, options);
 }
 
+export async function pdfUrlToImageBlobs(url, options) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`PDF 다운로드 실패: HTTP ${response.status}`);
+    const buffer = await response.arrayBuffer();
+    return pdfToImageBlobs(buffer, options);
+}
+
 /**
  * PDF Blob 배열을 Firebase Storage에 업로드하고 다운로드 URL 배열을 반환.
  * 유니티가 이 URL 배열을 받아 직접 다운로드 → 변환 라운드트립 불필요.
@@ -84,18 +91,27 @@ export async function pdfBase64ToImageBlobs(base64, options) {
  * @param {(progress: {current: number, total: number}) => void} onProgress
  * @returns {Promise<string[]>} 다운로드 URL 배열 (페이지 순서 그대로)
  */
-export async function uploadSlideImages(blobs, simulationCode, onProgress) {
+export async function uploadSlideImages(blobs, simulationCode, optionsOrProgress) {
+    const options = typeof optionsOrProgress === "function"
+        ? { onProgress: optionsOrProgress }
+        : optionsOrProgress || {};
+    const { ownerUid, onProgress } = options;
     const total = blobs.length;
     let done = 0;
     if (onProgress) onProgress({ current: 0, total });
+    const basePath = ownerUid
+        ? `users/${ownerUid}/simulations/${simulationCode}/slides`
+        : `simulations/${simulationCode}/slides`;
 
     // 병렬 업로드 — Promise.all 결과 배열 순서는 입력 순서와 동일 (페이지 순서 보존)
     const urls = await Promise.all(
         blobs.map(async (blob, i) => {
             const pageNum = i + 1;
             const fileName = `slide_${String(pageNum).padStart(3, "0")}.png`;
-            const storageRef = ref(storage, `simulations/${simulationCode}/slides/${fileName}`);
-            await uploadBytes(storageRef, blob, { contentType: "image/png" });
+            const storageRef = ref(storage, `${basePath}/${fileName}`);
+            const metadata = { contentType: "image/png" };
+            if (ownerUid) metadata.customMetadata = { ownerUid };
+            await uploadBytes(storageRef, blob, metadata);
             const url = await getDownloadURL(storageRef);
             done += 1;
             if (onProgress) onProgress({ current: done, total });
@@ -118,5 +134,18 @@ export async function convertAndUploadPdf(pdfBase64, simulationCode, onProgress)
     const urls = await uploadSlideImages(blobs, simulationCode, (p) =>
         onProgress?.({ phase: "upload", ...p })
     );
+    return { slideImageUrls: urls, pageCount: urls.length };
+}
+
+export async function convertAndUploadPdfFromUrl(pdfUrl, simulationCode, options = {}) {
+    const { ownerUid, onProgress } = options;
+    const blobs = await pdfUrlToImageBlobs(pdfUrl, {
+        scale: 1.5,
+        onProgress: (p) => onProgress?.({ phase: "convert", ...p }),
+    });
+    const urls = await uploadSlideImages(blobs, simulationCode, {
+        ownerUid,
+        onProgress: (p) => onProgress?.({ phase: "upload", ...p }),
+    });
     return { slideImageUrls: urls, pageCount: urls.length };
 }

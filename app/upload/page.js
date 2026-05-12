@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "../lib/AuthProvider";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -34,6 +35,7 @@ const saveVideoDB = async (key, data) => {
 
 export default function UploadPage() {
     const router = useRouter();
+    const { user, authLoading } = useAuth();
     const fileInputRef = useRef(null);
 
     const [videoFile, setVideoFile] = useState(null);
@@ -52,12 +54,19 @@ export default function UploadPage() {
     });
 
     useEffect(() => {
+        if (!authLoading && !user) {
+            router.replace("/");
+        }
+    }, [authLoading, router, user]);
+
+    useEffect(() => {
+        if (authLoading || !user) return;
         // sessionStorage에서 prepare 데이터 로드
         const savedData = sessionStorage.getItem("prepareData");
         if (savedData) {
             setPrepareData(JSON.parse(savedData));
         }
-    }, []);
+    }, [authLoading, user]);
 
     const handleDrag = (e) => {
         e.preventDefault();
@@ -98,7 +107,7 @@ export default function UploadPage() {
     };
 
     const handleUpload = async () => {
-        if (!videoFile) return;
+        if (!videoFile || !user) return;
 
         setUploading(true);
         setError("");
@@ -111,7 +120,11 @@ export default function UploadPage() {
                 buffer: arrayBuffer,
                 name: videoFile.name,
                 type: videoFile.type,
-                prepareData: prepareData
+                prepareData: {
+                    ...prepareData,
+                    ownerUid: prepareData.ownerUid || user.uid,
+                    ownerEmail: prepareData.ownerEmail || user.email || "",
+                }
             });
 
             // 로딩 페이지로 이동
@@ -131,6 +144,16 @@ export default function UploadPage() {
             fileInputRef.current.value = "";
         }
     };
+
+    if (authLoading || !user) {
+        return (
+            <main className="upload-page">
+                <div className="upload-container">
+                    <p className="subtitle">계정 정보를 확인하는 중입니다.</p>
+                </div>
+            </main>
+        );
+    }
 
     return (
         <main className="upload-page">
