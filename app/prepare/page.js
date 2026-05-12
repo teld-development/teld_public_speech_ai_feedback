@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "../lib/AuthProvider";
+import { uploadPresentationMaterial } from "../lib/presentationMaterial";
 
 const AUDIENCE_OPTIONS = [
     "교수님",
@@ -25,6 +27,7 @@ const PRESENTATION_TYPE_OPTIONS = [
 
 export default function PreparePage() {
     const router = useRouter();
+    const { user, authLoading } = useAuth();
 
     const [topic, setTopic] = useState("");
     const [audience, setAudience] = useState("");
@@ -37,6 +40,12 @@ export default function PreparePage() {
     const [showNextModal, setShowNextModal] = useState(false);
     const [simulationLoading, setSimulationLoading] = useState(false);
     const [simulationError, setSimulationError] = useState("");
+
+    useEffect(() => {
+        if (!authLoading && !user) {
+            router.replace("/");
+        }
+    }, [authLoading, router, user]);
 
     useEffect(() => {
         const saved = sessionStorage.getItem("prepareData");
@@ -55,23 +64,23 @@ export default function PreparePage() {
 
     const handleFileChange = (e) => {
         const file = e.target.files?.[0];
-        if (file) setPresentationMaterial(file);
+        if (!file) return;
+        if (file.type && file.type !== "application/pdf") {
+            setSimulationError("PDF 파일만 업로드할 수 있습니다.");
+            e.target.value = "";
+            return;
+        }
+        setPresentationMaterial(file);
+        setSimulationError("");
     };
 
-    const canProceed = topic.trim() && audience && consentAnalysis && presentationType;
+    const canProceed = topic.trim() && audience && consentAnalysis && presentationType && user;
 
     const buildPrepareData = async () => {
         let materialData = null;
         if (presentationMaterial) {
-            const buffer = await presentationMaterial.arrayBuffer();
-            const base64 = btoa(
-                new Uint8Array(buffer).reduce((d, b) => d + String.fromCharCode(b), "")
-            );
-            materialData = {
-                name: presentationMaterial.name,
-                type: presentationMaterial.type,
-                base64,
-            };
+            setSimulationError("발표 자료를 Firebase Storage에 업로드 중입니다...");
+            materialData = await uploadPresentationMaterial(presentationMaterial, user);
         }
 
         return {
@@ -79,6 +88,8 @@ export default function PreparePage() {
             audience,
             duration,
             presentationType,
+            ownerUid: user.uid,
+            ownerEmail: user.email || "",
             presentationMaterial: materialData,
         };
     };
@@ -96,9 +107,18 @@ export default function PreparePage() {
 
     const handleVideoUpload = async () => {
         if (!canProceed) return;
-        const data = await buildPrepareData();
-        sessionStorage.setItem("prepareData", JSON.stringify(data));
-        router.push("/upload");
+        setSimulationLoading(true);
+        setSimulationError("");
+        try {
+            const data = await buildPrepareData();
+            sessionStorage.setItem("prepareData", JSON.stringify(data));
+            router.push("/upload");
+        } catch (err) {
+            console.error("업로드 준비 실패:", err);
+            setSimulationError(err.message || "준비 중 오류가 발생했습니다. 다시 시도해주세요.");
+        } finally {
+            setSimulationLoading(false);
+        }
     };
 
     const handleSimulation = async () => {
@@ -110,11 +130,21 @@ export default function PreparePage() {
             router.push("/simulation/setup");
         } catch (err) {
             console.error("시뮬레이션 준비 실패:", err);
-            setSimulationError("준비 중 오류가 발생했습니다. 다시 시도해주세요.");
+            setSimulationError(err.message || "준비 중 오류가 발생했습니다. 다시 시도해주세요.");
         } finally {
             setSimulationLoading(false);
         }
     };
+
+    if (authLoading || !user) {
+        return (
+            <main className="prepare-page">
+                <div className="prepare-container">
+                    <p className="subtitle">계정 정보를 확인하는 중입니다.</p>
+                </div>
+            </main>
+        );
+    }
 
 
     return (

@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";
+import { auth } from "../lib/firebase";
+import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES } from "../lib/feedbackAreas";
 
 const DUMMY_FEEDBACK = {
@@ -21,7 +24,29 @@ const DUMMY_FEEDBACK = {
 
 export default function DashboardPage() {
     const router = useRouter();
+    const { user, authLoading } = useAuth();
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+
+    useEffect(() => {
+        if (!authLoading && !user) {
+            router.replace("/");
+        }
+    }, [authLoading, router, user]);
+
+    const handleLogout = async () => {
+        await signOut(auth);
+        router.replace("/");
+    };
+
+    if (authLoading || !user) {
+        return (
+            <main className="page">
+                <section className="card">
+                    <p className="subtitle">계정 정보를 확인하는 중입니다.</p>
+                </section>
+            </main>
+        );
+    }
 
     return (
         <div className="db-layout">
@@ -35,14 +60,14 @@ export default function DashboardPage() {
                         className="db-account-btn"
                         onClick={() => setAccountMenuOpen(!accountMenuOpen)}
                     >
-                        내 계정
+                        {user.email || "내 계정"}
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <path d="M6 9l6 6 6-6" />
                         </svg>
                     </button>
                     {accountMenuOpen && (
                         <div className="db-account-menu">
-                            <button onClick={() => router.push("/")}>로그아웃</button>
+                            <button onClick={handleLogout}>로그아웃</button>
                         </div>
                     )}
                 </div>
