@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
-import { adaptUnityResultToAnalysis } from "../../lib/unityResultAdapter";
 
 const STATUS_LABEL = {
     waiting: "Unity 시뮬레이션 연결 대기 중",
     in_progress: "시뮬레이션 진행 중",
-    completed: "분석 결과 처리 중",
+    completed: "AI 분석 진행 중",
 };
 
 export default function SimulationWaitingPage({ params }) {
@@ -22,6 +21,7 @@ export default function SimulationWaitingPage({ params }) {
     const [error, setError] = useState("");
     const [elapsed, setElapsed] = useState(0);
     const [copyStatus, setCopyStatus] = useState("");
+    const analysisStartedRef = useRef(false);
 
     useEffect(() => {
         const timer = setInterval(() => setElapsed((p) => p + 1), 1000);
@@ -47,20 +47,54 @@ export default function SimulationWaitingPage({ params }) {
                 const data = snap.data();
                 setStatus(data.status || "waiting");
 
-                if (data.status === "completed" && data.result) {
-                    // ★ Unity 결과를 원본 analysis 페이지가 기대하는 형식으로 어댑팅
-                    //   분석 페이지 자체는 절대 수정하지 않고, 데이터만 변환
+                if (data.status === "completed" && data.result && !analysisStartedRef.current) {
+                    analysisStartedRef.current = true;
                     const unityRaw = data.result;
-                    const adapted = adaptUnityResultToAnalysis(unityRaw);
-                    sessionStorage.setItem("analysisResult", JSON.stringify(adapted));
-                    sessionStorage.setItem("videoName", `시뮬레이션 (${code})`);
-                    // Unity 결과 videoUrl 저장 (Firebase Storage URL)
-                    if (unityRaw.videoUrl) {
-                        sessionStorage.setItem("videoUrl", unityRaw.videoUrl);
-                    } else {
-                        sessionStorage.removeItem("videoUrl");
+                    const videoUrl = unityRaw.videoUrl;
+
+                    if (!videoUrl) {
+                        setError("Unity 결과에 영상 URL이 없어 AI 분석을 실행할 수 없습니다.");
+                        return;
                     }
-                    router.push("/analysis");
+
+                    (async () => {
+                        try {
+                            const analyzeResponse = await fetch("/api/analyze", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    blobUrl: videoUrl,
+                                    fileName: unityRaw.fileName || `simulation_${code}.mp4`,
+                                    mimeType: unityRaw.mimeType || unityRaw.videoMimeType || "video/mp4",
+                                    topic: data.topic || "",
+                                    audience: data.audience || "",
+                                    duration: data.duration || "",
+                                    feedbackItems: data.feedbackItems || [],
+                                    materialUrl: data.presentationMaterial?.url || data.simulation?.pdfUrl || null,
+                                    conditions: data.conditions || [],
+                                }),
+                            });
+
+                            if (!analyzeResponse.ok) {
+                                let message = "분석에 실패했습니다.";
+                                try {
+                                    const errorData = await analyzeResponse.json();
+                                    message = errorData.error || message;
+                                } catch { }
+                                throw new Error(message);
+                            }
+
+                            const analysisResult = await analyzeResponse.json();
+                            sessionStorage.setItem("analysisResult", JSON.stringify(analysisResult));
+                            sessionStorage.setItem("videoName", `시뮬레이션 (${code})`);
+                            sessionStorage.setItem("videoUrl", videoUrl);
+                            router.push("/analysis");
+                        } catch (err) {
+                            console.error("[Simulation] AI 분석 실패:", err);
+                            analysisStartedRef.current = false;
+                            setError(err.message || "AI 분석 중 오류가 발생했습니다.");
+                        }
+                    })();
                 }
             },
             (err) => {
