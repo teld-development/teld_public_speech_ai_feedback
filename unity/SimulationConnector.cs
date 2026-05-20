@@ -20,9 +20,10 @@
 //     feedbackItems        : array<string>
 //     conditions           : array<string>
 //     presentationMaterial : { name: string, type: string } | null
+//     recordingUpload      : { bucket: string, rawVideoPath: string, fileName: string, mimeType: string }
 //     status               : "waiting" | "in_progress" | "completed"
 //     createdAt            : Timestamp (서버)
-//     result               : map (시뮬레이션 종료 후 Unity가 기록)
+//     result               : map (시뮬레이션 종료 후 Unity가 Storage 업로드 결과를 기록)
 
 using System;
 using System.Collections.Generic;
@@ -42,6 +43,16 @@ namespace PublicSpeech.Simulation
     }
 
     [FirestoreData]
+    public class RecordingUploadMeta
+    {
+        [FirestoreProperty] public string bucket { get; set; }
+        [FirestoreProperty] public string basePath { get; set; }
+        [FirestoreProperty] public string rawVideoPath { get; set; }
+        [FirestoreProperty] public string fileName { get; set; }
+        [FirestoreProperty] public string mimeType { get; set; }
+    }
+
+    [FirestoreData]
     public class SimulationData
     {
         [FirestoreProperty] public string topic { get; set; }
@@ -50,6 +61,7 @@ namespace PublicSpeech.Simulation
         [FirestoreProperty] public List<string> feedbackItems { get; set; }
         [FirestoreProperty] public List<string> conditions { get; set; }
         [FirestoreProperty] public PresentationMaterialMeta presentationMaterial { get; set; }
+        [FirestoreProperty] public RecordingUploadMeta recordingUpload { get; set; }
         [FirestoreProperty] public string status { get; set; }
         [FirestoreProperty] public Timestamp createdAt { get; set; }
     }

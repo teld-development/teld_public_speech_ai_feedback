@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/AuthProvider";
+import { getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
+import { storage } from "../lib/firebase";
+import { completePresentationAttempt, markAttemptAnalyzing } from "../lib/presentations";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -83,7 +86,7 @@ export default function LoadingPage() {
                     return;
                 }
 
-                const { buffer, name, type, prepareData } = videoData;
+                const { buffer, name, type, prepareData, presentationId, attemptId, recordingUpload } = videoData;
 
                 // ArrayBuffer를 Blob으로 변환
                 const blob = new Blob([buffer], { type });
@@ -97,35 +100,79 @@ export default function LoadingPage() {
 
                 let blobResult;
                 try {
-                    blobResult = await new Promise((resolve, reject) => {
-                        const xhr = new XMLHttpRequest();
-                        xhr.open('POST', `/api/upload-blob?filename=${encodeURIComponent(file.name)}`);
-                        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-                        xhr.upload.addEventListener('progress', (e) => {
-                            if (e.lengthComputable) {
-                                const pct = Math.round((e.loaded / e.total) * 100);
-                                setUploadProgress(pct);
-                                setProgress(Math.min(5 + Math.round(pct * 0.2), 25));
-                            }
+                    if (recordingUpload?.rawVideoPath) {
+                        blobResult = await new Promise((resolve, reject) => {
+                            const ref = storageRef(storage, recordingUpload.rawVideoPath);
+                            const task = uploadBytesResumable(ref, file, {
+                                contentType: file.type || recordingUpload.mimeType || "video/mp4",
+                                customMetadata: {
+                                    ownerUid: user.uid,
+                                    presentationId: presentationId || "",
+                                    attemptId: attemptId || "",
+                                    sourceType: "upload",
+                                },
+                            });
+
+                            task.on(
+                                "state_changed",
+                                (snapshot) => {
+                                    const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                                    setUploadProgress(pct);
+                                    setProgress(Math.min(5 + Math.round(pct * 0.2), 25));
+                                },
+                                reject,
+                                async () => {
+                                    const url = await getDownloadURL(task.snapshot.ref);
+                                    resolve({
+                                        url,
+                                        storagePath: recordingUpload.rawVideoPath,
+                                        fileName: recordingUpload.fileName || file.name,
+                                        mimeType: file.type || recordingUpload.mimeType || "video/mp4",
+                                    });
+                                }
+                            );
                         });
-                        xhr.onload = () => {
-                            if (xhr.status >= 200 && xhr.status < 300) {
-                                resolve(JSON.parse(xhr.responseText));
-                            } else {
-                                let msg = `HTTP ${xhr.status}`;
-                                try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-                                reject(new Error(msg));
-                            }
-                        };
-                        xhr.onerror = () => reject(new Error('네트워크 오류가 발생했습니다.'));
-                        xhr.send(file);
-                    });
+                    } else {
+                        blobResult = await new Promise((resolve, reject) => {
+                            const xhr = new XMLHttpRequest();
+                            xhr.open('POST', `/api/upload-blob?filename=${encodeURIComponent(file.name)}`);
+                            xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+                            xhr.upload.addEventListener('progress', (e) => {
+                                if (e.lengthComputable) {
+                                    const pct = Math.round((e.loaded / e.total) * 100);
+                                    setUploadProgress(pct);
+                                    setProgress(Math.min(5 + Math.round(pct * 0.2), 25));
+                                }
+                            });
+                            xhr.onload = () => {
+                                if (xhr.status >= 200 && xhr.status < 300) {
+                                    resolve(JSON.parse(xhr.responseText));
+                                } else {
+                                    let msg = `HTTP ${xhr.status}`;
+                                    try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
+                                    reject(new Error(msg));
+                                }
+                            };
+                            xhr.onerror = () => reject(new Error('네트워크 오류가 발생했습니다.'));
+                            xhr.send(file);
+                        });
+                    }
                 } catch (uploadError) {
                     console.error("[Loading] 업로드 실패:", uploadError);
                     throw new Error("영상 업로드에 실패했습니다: " + uploadError.message);
                 }
 
                 console.log("[Loading] 업로드 완료:", blobResult.url);
+                if (presentationId && attemptId) {
+                    await markAttemptAnalyzing(user, presentationId, attemptId, {
+                        video: {
+                            videoUrl: blobResult.url,
+                            storagePath: blobResult.storagePath || recordingUpload?.rawVideoPath || "",
+                            fileName: blobResult.fileName || name,
+                            mimeType: blobResult.mimeType || type || "video/mp4",
+                        },
+                    });
+                }
 
                 // ===== 발표 자료 업로드 (있는 경우만) =====
                 let materialUrl = null;
@@ -208,6 +255,17 @@ export default function LoadingPage() {
                 console.log("[Loading] 분석 완료");
 
                 setProgress(95);
+
+                if (presentationId && attemptId) {
+                    await completePresentationAttempt(user, presentationId, attemptId, analysisResult, {
+                        video: {
+                            videoUrl: blobResult.url,
+                            storagePath: blobResult.storagePath || recordingUpload?.rawVideoPath || "",
+                            fileName: blobResult.fileName || name,
+                            mimeType: blobResult.mimeType || type || "video/mp4",
+                        },
+                    });
+                }
 
                 // 결과 저장
                 sessionStorage.setItem("analysisResult", JSON.stringify(analysisResult));

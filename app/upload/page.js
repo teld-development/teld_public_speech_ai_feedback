@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useRef, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../lib/AuthProvider";
+import {
+    buildRecordingUpload,
+    createPresentationAttempt,
+    getPresentationSession,
+} from "../lib/presentations";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -33,10 +38,12 @@ const saveVideoDB = async (key, data) => {
     });
 };
 
-export default function UploadPage() {
+function UploadPageContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user, authLoading } = useAuth();
     const fileInputRef = useRef(null);
+    const presentationId = searchParams.get("presentationId");
 
     const [videoFile, setVideoFile] = useState(null);
     const [dragActive, setDragActive] = useState(false);
@@ -61,12 +68,38 @@ export default function UploadPage() {
 
     useEffect(() => {
         if (authLoading || !user) return;
+
+        if (presentationId) {
+            getPresentationSession(user, presentationId)
+                .then((presentation) => {
+                    setPrepareData({
+                        presentationId: presentation.id,
+                        title: presentation.title || "발표",
+                        topic: presentation.topic || "",
+                        audience: presentation.audience || "",
+                        dday: presentation.dday || "",
+                        duration: presentation.duration || "",
+                        presentationType: presentation.presentationType || "",
+                        feedbackItems: [],
+                        conditions: [],
+                        ownerUid: user.uid,
+                        ownerEmail: user.email || "",
+                        presentationMaterial: presentation.presentationMaterial || null,
+                    });
+                })
+                .catch((err) => {
+                    console.error("[Upload] 발표 세션 로드 실패:", err);
+                    router.replace("/dashboard");
+                });
+            return;
+        }
+
         // sessionStorage에서 prepare 데이터 로드
         const savedData = sessionStorage.getItem("prepareData");
         if (savedData) {
             setPrepareData(JSON.parse(savedData));
         }
-    }, [authLoading, user]);
+    }, [authLoading, presentationId, router, user]);
 
     const handleDrag = (e) => {
         e.preventDefault();
@@ -113,6 +146,21 @@ export default function UploadPage() {
         setError("");
 
         try {
+            let attempt = null;
+            let recordingUpload = null;
+
+            if (presentationId) {
+                attempt = await createPresentationAttempt(user, presentationId, "upload");
+                recordingUpload = buildRecordingUpload({
+                    ownerUid: user.uid,
+                    presentationId,
+                    attemptId: attempt.id,
+                    sourceType: "upload",
+                    fileName: videoFile.name || `upload_${attempt.id}.mp4`,
+                    mimeType: videoFile.type || "video/mp4",
+                });
+            }
+
             // 비디오 파일을 ArrayBuffer로 변환하여 IndexedDB에 저장
             const arrayBuffer = await videoFile.arrayBuffer();
 
@@ -120,8 +168,16 @@ export default function UploadPage() {
                 buffer: arrayBuffer,
                 name: videoFile.name,
                 type: videoFile.type,
+                presentationId: presentationId || null,
+                attemptId: attempt?.id || null,
+                attemptNo: attempt?.attemptNo || null,
+                recordingUpload,
                 prepareData: {
                     ...prepareData,
+                    presentationId: presentationId || prepareData.presentationId || null,
+                    attemptId: attempt?.id || null,
+                    attemptNo: attempt?.attemptNo || null,
+                    recordingUpload,
                     ownerUid: prepareData.ownerUid || user.uid,
                     ownerEmail: prepareData.ownerEmail || user.email || "",
                 }
@@ -247,7 +303,7 @@ export default function UploadPage() {
                     <button
                         type="button"
                         className="btn-secondary"
-                        onClick={() => router.push("/prepare")}
+                        onClick={() => router.push(presentationId ? `/presentations/${presentationId}` : "/prepare")}
                         disabled={uploading}
                     >
                         이전으로
@@ -263,5 +319,19 @@ export default function UploadPage() {
                 </div>
             </div>
         </main>
+    );
+}
+
+export default function UploadPage() {
+    return (
+        <Suspense fallback={(
+            <main className="upload-page">
+                <div className="upload-container">
+                    <p className="subtitle">업로드 화면을 불러오는 중입니다.</p>
+                </div>
+            </main>
+        )}>
+            <UploadPageContent />
+        </Suspense>
     );
 }

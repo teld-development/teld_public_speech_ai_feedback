@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { getDownloadURL, ref as storageRef } from "firebase/storage";
+import { db, storage } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
+import { completePresentationAttempt, markAttemptAnalyzing } from "../../lib/presentations";
 
 const STATUS_LABEL = {
     waiting: "Unity 시뮬레이션 연결 대기 중",
@@ -39,7 +41,7 @@ export default function SimulationWaitingPage({ params }) {
         const ref = doc(db, "simulations", code);
         const unsub = onSnapshot(
             ref,
-            (snap) => {
+            async (snap) => {
                 if (!snap.exists()) {
                     setError("해당 코드의 시뮬레이션 정보를 찾을 수 없습니다.");
                     return;
@@ -50,7 +52,15 @@ export default function SimulationWaitingPage({ params }) {
                 if (data.status === "completed" && data.result && !analysisStartedRef.current) {
                     analysisStartedRef.current = true;
                     const unityRaw = data.result;
-                    const videoUrl = unityRaw.videoUrl;
+                    let videoUrl = unityRaw.videoUrl;
+
+                    if (!videoUrl && unityRaw.storagePath) {
+                        try {
+                            videoUrl = await getDownloadURL(storageRef(storage, unityRaw.storagePath));
+                        } catch (urlErr) {
+                            console.error("[Simulation] Storage URL 조회 실패:", urlErr);
+                        }
+                    }
 
                     if (!videoUrl) {
                         setError("Unity 결과에 영상 URL이 없어 AI 분석을 실행할 수 없습니다.");
@@ -59,6 +69,17 @@ export default function SimulationWaitingPage({ params }) {
 
                     (async () => {
                         try {
+                            if (data.presentationId && data.attemptId) {
+                                await markAttemptAnalyzing(user, data.presentationId, data.attemptId, {
+                                    video: {
+                                        videoUrl,
+                                        storagePath: unityRaw.storagePath || "",
+                                        fileName: unityRaw.fileName || `simulation_${code}.mp4`,
+                                        mimeType: unityRaw.mimeType || unityRaw.videoMimeType || "video/mp4",
+                                    },
+                                });
+                            }
+
                             const analyzeResponse = await fetch("/api/analyze", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
@@ -85,9 +106,30 @@ export default function SimulationWaitingPage({ params }) {
                             }
 
                             const analysisResult = await analyzeResponse.json();
+
+                            if (data.presentationId && data.attemptId) {
+                                await completePresentationAttempt(user, data.presentationId, data.attemptId, analysisResult, {
+                                    video: {
+                                        videoUrl,
+                                        storagePath: unityRaw.storagePath || "",
+                                        fileName: unityRaw.fileName || `simulation_${code}.mp4`,
+                                        mimeType: unityRaw.mimeType || unityRaw.videoMimeType || "video/mp4",
+                                    },
+                                    simulation: {
+                                        code,
+                                        backendSessionId: data.backendSessionId || "",
+                                    },
+                                });
+                            }
+
                             sessionStorage.setItem("analysisResult", JSON.stringify(analysisResult));
                             sessionStorage.setItem("videoName", `시뮬레이션 (${code})`);
                             sessionStorage.setItem("videoUrl", videoUrl);
+                            if (data.feedbackItems) {
+                                sessionStorage.setItem("prepareData", JSON.stringify({
+                                    feedbackItems: data.feedbackItems || [],
+                                }));
+                            }
                             router.push("/analysis");
                         } catch (err) {
                             console.error("[Simulation] AI 분석 실패:", err);

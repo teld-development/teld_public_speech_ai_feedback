@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
 import { convertAndUploadPdfFromUrl } from "../../lib/pdfToImages";
+import {
+    buildRecordingUpload,
+    createPresentationAttempt,
+    getPresentationSession,
+} from "../../lib/presentations";
 
 const generateSimulationCode = () =>
     String(Math.floor(100000 + Math.random() * 900000));
@@ -109,9 +114,11 @@ function ratioToStudents(ratios) {
     return students;
 }
 
-export default function SimulationSetupPage() {
+function SimulationSetupPageContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user, authLoading } = useAuth();
+    const presentationId = searchParams.get("presentationId");
 
     const [prepareData, setPrepareData] = useState(null);
     const [crowdSize, setCrowdSize] = useState("");
@@ -151,11 +158,35 @@ export default function SimulationSetupPage() {
     useEffect(() => {
         if (authLoading) return;
         if (!user) return;
+
+        if (presentationId) {
+            getPresentationSession(user, presentationId)
+                .then((presentation) => {
+                    setPrepareData({
+                        presentationId: presentation.id,
+                        title: presentation.title || "발표",
+                        topic: presentation.topic || "",
+                        audience: presentation.audience || "",
+                        dday: presentation.dday || "",
+                        duration: presentation.duration || "",
+                        presentationType: presentation.presentationType || "",
+                        ownerUid: user.uid,
+                        ownerEmail: user.email || "",
+                        presentationMaterial: presentation.presentationMaterial || null,
+                    });
+                })
+                .catch((err) => {
+                    console.error("[Setup] 발표 세션 로드 실패:", err);
+                    router.replace("/dashboard");
+                });
+            return;
+        }
+
         const saved = sessionStorage.getItem("prepareData");
         if (!saved) { router.replace("/prepare"); return; }
         try { setPrepareData(JSON.parse(saved)); }
         catch { router.replace("/prepare"); }
-    }, [authLoading, router, user]);
+    }, [authLoading, presentationId, router, user]);
 
     const totalRatio = Object.values(ratios).reduce((s, v) => s + v, 0);
     const ratiosValid = totalRatio === 100;
@@ -233,13 +264,38 @@ export default function SimulationSetupPage() {
             const students = ratioToStudents(ratios);
             const crowdSizeOpt = CROWD_SIZE_OPTIONS.find((o) => o.id === crowdSize);
             const audienceCount = crowdSizeOpt?.count || 16;
+            let attempt = null;
+            let recordingUpload = null;
+
+            if (presentationId) {
+                attempt = await createPresentationAttempt(user, presentationId, "simulation");
+                recordingUpload = buildRecordingUpload({
+                    ownerUid: user.uid,
+                    presentationId,
+                    attemptId: attempt.id,
+                    code,
+                    sourceType: "simulation",
+                });
+            }
 
             // 3) Firestore에 시뮬레이션 정보 저장 (Unity가 읽음)
-            const { presentationMaterial: _mat, ...meta } = prepareData;
-            await setDoc(doc(db, "simulations", code), {
+            const { presentationMaterial: _mat, presentationId: _pid, ...meta } = prepareData;
+            const simulationPayload = {
                 ...meta,
                 ownerUid: user.uid,
                 ownerEmail: user.email || "",
+                presentationId: presentationId || null,
+                attemptId: attempt?.id || null,
+                attemptNo: attempt?.attemptNo || null,
+                sourceType: "simulation",
+                presentation: presentationId ? {
+                    title: prepareData.title || "발표",
+                    topic: prepareData.topic || "",
+                    audience: prepareData.audience || "",
+                    dday: prepareData.dday || "",
+                    duration: prepareData.duration || "",
+                    presentationType: prepareData.presentationType || "",
+                } : null,
                 presentationMaterial: materialMeta,
                 simulation: {
                     crowdSize,
@@ -251,9 +307,28 @@ export default function SimulationSetupPage() {
                     slideImageUrls,
                     slideCount: slideImageUrls.length,
                 },
+                recordingUpload,
                 status: "waiting",
                 createdAt: serverTimestamp(),
+            };
+
+            await setDoc(doc(db, "simulations", code), {
+                ...simulationPayload,
             });
+
+            if (attempt) {
+                await setDoc(attempt.ref, {
+                    status: "waiting",
+                    simulation: {
+                        code,
+                        crowdSize,
+                        audienceCount,
+                        ratios,
+                    },
+                    recordingUpload,
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+            }
 
             // 4) (선택) 백엔드 /session/create 호출 - 기존 Unity와 호환
             try {
@@ -281,26 +356,34 @@ export default function SimulationSetupPage() {
                     // 백엔드의 accessCode와 동일하게 맞추기 위해 Firestore 업데이트
                     // (백엔드는 자체 코드 발급. Unity는 그 코드 사용)
                     if (backendData.accessCode && backendData.accessCode !== code) {
+                        const backendRecordingUpload = attempt ? buildRecordingUpload({
+                            ownerUid: user.uid,
+                            presentationId,
+                            attemptId: attempt.id,
+                            code: backendData.accessCode,
+                            sourceType: "simulation",
+                        }) : null;
+
                         // 백엔드 코드로 새 Firestore 문서 만들기
                         await setDoc(doc(db, "simulations", backendData.accessCode), {
-                            ...meta,
-                            ownerUid: user.uid,
-                            ownerEmail: user.email || "",
-                            presentationMaterial: materialMeta,
-                            simulation: {
-                                crowdSize,
-                                audienceCount,
-                                ratios,
-                                students,
-                                pdfUrl,
-                                slideImageUrls,
-                                slideCount: slideImageUrls.length,
-                            },
-                            status: "waiting",
-                            createdAt: serverTimestamp(),
+                            ...simulationPayload,
+                            recordingUpload: backendRecordingUpload,
                             backendCode: backendData.accessCode,
                             backendSessionId: backendData.sessionId,
                         });
+                        if (attempt) {
+                            await setDoc(attempt.ref, {
+                                simulation: {
+                                    code: backendData.accessCode,
+                                    backendSessionId: backendData.sessionId,
+                                    crowdSize,
+                                    audienceCount,
+                                    ratios,
+                                },
+                                recordingUpload: backendRecordingUpload,
+                                updatedAt: serverTimestamp(),
+                            }, { merge: true });
+                        }
                         sessionStorage.setItem("simulationCode", backendData.accessCode);
                         router.push(`/simulation/${backendData.accessCode}`);
                         return;
@@ -593,5 +676,17 @@ export default function SimulationSetupPage() {
                 </div>
             </div>
         </main>
+    );
+}
+
+export default function SimulationSetupPage() {
+    return (
+        <Suspense fallback={(
+            <main className="sim-setup-page">
+                <div className="sim-setup-loading">불러오는 중...</div>
+            </main>
+        )}>
+            <SimulationSetupPageContent />
+        </Suspense>
     );
 }
