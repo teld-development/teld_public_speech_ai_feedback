@@ -9,9 +9,11 @@ import { adaptUnityResultToAnalysis } from "../../lib/unityResultAdapter";
 const STATUS_LABEL = {
     waiting: "Unity 시뮬레이션 연결 대기 중",
     in_progress: "시뮬레이션 진행 중",
-    analysis: "AI 분석 준비 중...",
-    analyzing: "AI 분석 중... (1~2분 소요)",
-    completed: "분석 결과 처리 중",
+    analysis: "AI 분석 준비 중...",         // 레거시
+    analyzing: "AI 분석 중... (1~2분 소요)", // 레거시
+    completed: "AI 분석 중... (1~2분 소요)", // Unity 업로드 완료 → 웹이 Gemini 트리거
+    upload_failed: "업로드 실패",
+    failed: "업로드 실패",
 };
 
 export default function SimulationWaitingPage({ params }) {
@@ -31,20 +33,27 @@ export default function SimulationWaitingPage({ params }) {
         return () => clearInterval(timer);
     }, []);
 
-    // simulations 문서 데이터로 /api/analyze 호출 → 결과를 Firestore 에 completed 기록
+    // /api/analyze 호출 → 결과를 별도 필드 analysisData 에 저장 (status·result 불변)
     const runAnalysis = async (data) => {
         try {
             console.log("[Simulation] /api/analyze 분석 시작");
-            // ★ 'analyzing' 으로 선점 — 새로고침/타 기기에서 중복 Gemini 호출 방지
-            await updateDoc(doc(db, "simulations", code), { status: "analyzing" });
+            // ★ analysisInProgress 선점 — 새로고침/타 기기 중복 Gemini 호출 방지
+            await updateDoc(doc(db, "simulations", code), { analysisInProgress: true });
+
+            // Unity 새 흐름: 영상 정보는 data.result 안에 있음
+            // 레거시: data.videoUrl 직접
+            const videoInfo = data.result || {};
+            const videoUrl = videoInfo.videoUrl || data.videoUrl;
+            const fileName = videoInfo.fileName || `simulation_${code}.mp4`;
+            const mimeType = videoInfo.mimeType || "video/mp4";
 
             const res = await fetch("/api/analyze", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    blobUrl: data.videoUrl,
-                    fileName: `simulation_${code}.mp4`,
-                    mimeType: "video/mp4",
+                    blobUrl: videoUrl,
+                    fileName,
+                    mimeType,
                     topic: data.topic || "",
                     audience: data.audience || "",
                     duration: data.duration || "",
@@ -60,22 +69,21 @@ export default function SimulationWaitingPage({ params }) {
             }
 
             const analysisResult = await res.json();
-            console.log("[Simulation] 분석 완료 → Firestore 에 completed 기록");
+            console.log("[Simulation] 분석 완료 → analysisData 기록");
 
-            // ★ 결과 + completed 를 Firestore 에 기록 (다른 기기/새로고침해도 유지)
+            // ★ 분석 결과는 별도 필드 analysisData 에 저장.
+            //   status('completed') 와 result(영상 정보) 는 Unity 가 쓴 그대로 보존.
             await updateDoc(doc(db, "simulations", code), {
-                status: "completed",
-                result: analysisResult,
-                resultSource: "web", // adaptUnityResultToAnalysis 안 거치도록 표시
+                analysisData: analysisResult,
+                analysisInProgress: false,
             });
-            // 이후 onSnapshot 이 completed 감지 → /analysis 이동
+            // 이후 onSnapshot 이 analysisData 감지 → /analysis 이동
         } catch (e) {
             console.error("[Simulation] 분석 실패:", e);
             setError(`AI 분석 중 오류가 발생했습니다: ${e.message}`);
-            analyzeTriggeredRef.current = false; // 재시도 가능하도록 가드 해제
-            // 상태를 'analysis' 로 되돌려 재시도 가능하게
+            // analyzeTriggeredRef 는 true 유지 (무한 재시도 방지). 페이지 새로고침으로 재시도 가능.
             try {
-                await updateDoc(doc(db, "simulations", code), { status: "analysis" });
+                await updateDoc(doc(db, "simulations", code), { analysisInProgress: false });
             } catch (_) { }
         }
     };
@@ -95,39 +103,77 @@ export default function SimulationWaitingPage({ params }) {
                 setStatus(data.status || "waiting");
 
                 // ─────────────────────────────────────────────
-                // ★ status='analysis' : Unity 가 영상 업로드 + 상태만 바꾸고 떠난 상태.
-                //   웹이 /api/analyze (Gemini) 분석을 트리거하고 결과를 Firestore 에 기록.
+                // 1. 업로드/처리 실패
+                // ─────────────────────────────────────────────
+                if (data.status === "upload_failed" || data.status === "failed") {
+                    setError(`업로드 실패: ${data.errorMessage || "알 수 없는 오류"}`);
+                    return;
+                }
+
+                // ─────────────────────────────────────────────
+                // 2. 분석 결과(analysisData) 준비됨 → 분석 페이지로 이동
+                // ─────────────────────────────────────────────
+                if (data.analysisData) {
+                    sessionStorage.setItem("analysisResult", JSON.stringify(data.analysisData));
+                    sessionStorage.setItem("videoName", `시뮬레이션 (${code})`);
+                    const vUrl = data.result?.videoUrl || data.videoUrl;
+                    if (vUrl) sessionStorage.setItem("videoUrl", vUrl);
+                    else sessionStorage.removeItem("videoUrl");
+                    router.push("/analysis");
+                    return;
+                }
+
+                // ─────────────────────────────────────────────
+                // 3. 신규 흐름: Unity 가 status='completed' + result.videoUrl 기록
+                //    → 웹이 Gemini 분석 트리거 (analysisInProgress 로 중복 방지)
+                // ─────────────────────────────────────────────
+                if (
+                    data.status === "completed" &&
+                    data.result?.videoUrl &&
+                    !data.analysisInProgress &&
+                    !analyzeTriggeredRef.current
+                ) {
+                    analyzeTriggeredRef.current = true;
+                    runAnalysis(data);
+                    return;
+                }
+
+                // ─────────────────────────────────────────────
+                // 4. 레거시: status='analysis' (이전 Unity 흐름) — 하위 호환
                 // ─────────────────────────────────────────────
                 if (
                     data.status === "analysis" &&
                     data.videoUrl &&
                     !analyzeTriggeredRef.current
                 ) {
-                    analyzeTriggeredRef.current = true; // 중복 호출 방지
+                    analyzeTriggeredRef.current = true;
                     runAnalysis(data);
                     return;
                 }
 
                 // ─────────────────────────────────────────────
-                // ★ status='completed' : 결과 준비됨 → 분석 페이지로 이동
+                // 5. 레거시: status='completed' + result 에 분석 데이터 직접 포함
+                //    (이전 Unity raw 흐름 or 이전 웹 result 흐름)
                 // ─────────────────────────────────────────────
                 if (data.status === "completed" && data.result) {
+                    const hasAnalysisFields =
+                        data.result.timestamps !== undefined ||
+                        data.result.scores !== undefined ||
+                        data.result.summary !== undefined ||
+                        data.result.feedbackText !== undefined;
+                    if (!hasAnalysisFields) return; // 영상 정보만 있음 → 3번이 곧 트리거
+
                     let analysisData;
-                    if (data.resultSource === "web") {
-                        // 웹 /api/analyze 결과 — 이미 분석 페이지 형식. 변환 불필요.
+                    if (data.resultSource === "web" || data.result.timestamps !== undefined) {
                         analysisData = data.result;
                     } else {
-                        // 레거시: Unity raw 결과 → 어댑터로 변환 (하위 호환)
                         analysisData = adaptUnityResultToAnalysis(data.result);
                     }
                     sessionStorage.setItem("analysisResult", JSON.stringify(analysisData));
                     sessionStorage.setItem("videoName", `시뮬레이션 (${code})`);
-                    const vUrl = data.videoUrl || data.result?.videoUrl;
-                    if (vUrl) {
-                        sessionStorage.setItem("videoUrl", vUrl);
-                    } else {
-                        sessionStorage.removeItem("videoUrl");
-                    }
+                    const vUrl = data.result?.videoUrl || data.videoUrl;
+                    if (vUrl) sessionStorage.setItem("videoUrl", vUrl);
+                    else sessionStorage.removeItem("videoUrl");
                     router.push("/analysis");
                 }
             },

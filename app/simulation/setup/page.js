@@ -225,6 +225,13 @@ export default function SimulationSetupPage() {
 
             // 3) Firestore에 시뮬레이션 정보 저장 (Unity가 읽음)
             const { presentationMaterial: _mat, ...meta } = prepareData;
+            // ★ Unity 가 발표 종료 후 영상을 올릴 storage 경로 사전 정의
+            //   Unity 의 FinalizeAndSendToBackend → GetRecordingUploadInfoAsync 가 이 필드를 읽음
+            const recordingFileName = `recording_${code}.mp4`;
+            const recordingUpload = {
+                rawVideoPath: `simulations/${code}/${recordingFileName}`,
+                fileName: recordingFileName,
+            };
             await setDoc(doc(db, "simulations", code), {
                 ...meta,
                 presentationMaterial: materialMeta,
@@ -238,6 +245,7 @@ export default function SimulationSetupPage() {
                     slideImageUrls,
                     slideCount: slideImageUrls.length,
                 },
+                recordingUpload,
                 status: "waiting",
                 createdAt: serverTimestamp(),
             });
@@ -269,6 +277,11 @@ export default function SimulationSetupPage() {
                     // (백엔드는 자체 코드 발급. Unity는 그 코드 사용)
                     if (backendData.accessCode && backendData.accessCode !== code) {
                         // 백엔드 코드로 새 Firestore 문서 만들기
+                        const backendFileName = `recording_${backendData.accessCode}.mp4`;
+                        const backendRecordingUpload = {
+                            rawVideoPath: `simulations/${backendData.accessCode}/${backendFileName}`,
+                            fileName: backendFileName,
+                        };
                         await setDoc(doc(db, "simulations", backendData.accessCode), {
                             ...meta,
                             presentationMaterial: materialMeta,
@@ -281,6 +294,7 @@ export default function SimulationSetupPage() {
                                 slideImageUrls,
                                 slideCount: slideImageUrls.length,
                             },
+                            recordingUpload: backendRecordingUpload,
                             status: "waiting",
                             createdAt: serverTimestamp(),
                             backendCode: backendData.accessCode,
