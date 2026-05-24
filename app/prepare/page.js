@@ -63,10 +63,15 @@ export default function PreparePage() {
     const buildPrepareData = async () => {
         let materialData = null;
         if (presentationMaterial) {
-            const buffer = await presentationMaterial.arrayBuffer();
-            const base64 = btoa(
-                new Uint8Array(buffer).reduce((d, b) => d + String.fromCharCode(b), "")
-            );
+            // ★ FileReader 네이티브 변환 (메인 스레드 비차단, O(n))
+            //   이전: Uint8Array.reduce + String.fromCharCode 매 byte concat = O(n²)
+            const dataUrl = await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(fr.error);
+                fr.readAsDataURL(presentationMaterial);
+            });
+            const base64 = (typeof dataUrl === "string" ? dataUrl.split(",")[1] : "") || "";
             materialData = {
                 name: presentationMaterial.name,
                 type: presentationMaterial.type,
@@ -104,8 +109,12 @@ export default function PreparePage() {
     const handleSimulation = async () => {
         if (!canProceed || simulationLoading) return;
         setSimulationLoading(true);
+        // ★ 다음 페이지 prefetch — Next.js dev/prod 모두에서 컴파일·청크 미리 (체감 응답성 ↑)
+        try { router.prefetch("/simulation/setup"); } catch {}
         try {
             const data = await buildPrepareData();
+            // ★ sessionStorage 쓰기 전 microtask 양보 (FileReader 직후 paint 보장)
+            await new Promise((r) => setTimeout(r, 0));
             sessionStorage.setItem("prepareData", JSON.stringify(data));
             router.push("/simulation/setup");
         } catch (err) {
@@ -252,6 +261,7 @@ export default function PreparePage() {
                         onClick={(e) => e.stopPropagation()}
                         role="dialog"
                         aria-modal="true"
+                        style={{ position: "relative" }}
                     >
                         <h3 className="next-modal-title">분석 방식 선택</h3>
                                 <p className="next-modal-desc">
@@ -263,6 +273,7 @@ export default function PreparePage() {
                                         className="next-modal-option"
                                         onClick={handleSimulation}
                                         disabled={simulationLoading}
+                                        style={simulationLoading ? { opacity: 0.4, cursor: "wait" } : undefined}
                                     >
                                         <span className="next-modal-option-icon">🎮</span>
                                         <span className="next-modal-option-title">시뮬레이션</span>
@@ -275,6 +286,7 @@ export default function PreparePage() {
                                         className="next-modal-option"
                                         onClick={handleVideoUpload}
                                         disabled={simulationLoading}
+                                        style={simulationLoading ? { opacity: 0.4, cursor: "wait" } : undefined}
                                     >
                                         <span className="next-modal-option-icon">🎥</span>
                                         <span className="next-modal-option-title">영상 업로드하기</span>
@@ -284,8 +296,41 @@ export default function PreparePage() {
                                     </button>
                                 </div>
 
+                                {/* ★ 로딩 오버레이 — 클릭 즉시 큰 시각적 피드백 + 추가 클릭 차단 */}
                                 {simulationLoading && (
-                                    <p className="next-modal-status">준비 중…</p>
+                                    <div
+                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                        style={{
+                                            position: "absolute",
+                                            inset: 0,
+                                            background: "rgba(255,255,255,0.85)",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            borderRadius: "inherit",
+                                            zIndex: 10,
+                                            gap: "12px",
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                width: "48px",
+                                                height: "48px",
+                                                border: "4px solid #e5e7eb",
+                                                borderTopColor: "#0071e3",
+                                                borderRadius: "50%",
+                                                animation: "spin 0.8s linear infinite",
+                                            }}
+                                        />
+                                        <p style={{ fontSize: "16px", fontWeight: 600, color: "#1d1d1f", margin: 0 }}>
+                                            발표 자료 준비 중…
+                                        </p>
+                                        <p style={{ fontSize: "13px", color: "#86868b", margin: 0 }}>
+                                            잠시만 기다려주세요.
+                                        </p>
+                                        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                                    </div>
                                 )}
                                 {simulationError && (
                                     <p className="next-modal-error">{simulationError}</p>

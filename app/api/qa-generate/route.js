@@ -89,10 +89,32 @@ async function ttsToBase64(text, studentIndex, gender, apiKey) {
     }
 }
 
-// ── JSON 추출 (모델이 ```json ... ``` 로 감쌀 수도 있어서) ────────────────
+// ── JSON 추출 — 코드 블록 / 산문 사이 끼어있는 JSON 까지 모두 보수적으로 추출 ──
 function extractJSON(text) {
+    if (!text) return "";
+    // 1) ```json ... ``` 또는 ``` ... ``` 코드블록
     const fenced = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-    return fenced ? fenced[1] : text;
+    if (fenced) return fenced[1];
+    // 2) 첫 '{' 와 마지막 '}' 사이 (가장 흔한 케이스: 산문 안에 JSON 끼어있음)
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        return text.slice(firstBrace, lastBrace + 1);
+    }
+    // 3) 그래도 못 찾으면 원본 그대로 (호출자가 파싱 실패 처리)
+    return text;
+}
+
+// ── 빈약한 transcript 일 때 사용할 fallback 질문 (Gemini 호출 우회) ──
+function buildFallbackQuestions(totalQuestions) {
+    const pool = [
+        { type: "clarification", question: "발표 도입부에서 다루신 주제를 좀 더 구체적으로 설명해주실 수 있을까요?" },
+        { type: "evidence",      question: "발표의 핵심 메시지를 뒷받침하는 사례나 근거가 있다면 한 가지만 더 들려주실 수 있나요?" },
+        { type: "application",   question: "이 주제가 실제 상황에서 어떻게 적용될 수 있을지 궁금합니다." },
+        { type: "clarification", question: "발표 중 가장 강조하고 싶으셨던 부분은 어떤 것이었나요?" },
+        { type: "evidence",      question: "이 주제에 대한 발표자님의 견해를 한 번 더 정리해주실 수 있을까요?" },
+    ];
+    return pool.slice(0, totalQuestions).map((q, i) => ({ chunkIndex: 0, type: q.type, question: q.question }));
 }
 
 // ── 메인 핸들러 ────────────────────────────────────────────────────────────
@@ -119,6 +141,14 @@ export async function POST(request) {
         }
 
         console.log(`[qa-generate] 시작 — sessionId=${sessionId}, 청크 ${chunks.length}개`);
+
+        // ★ 빈약한 transcript 가드 — Gemini 가 거부 응답 ("발표 내용 부족...") 보낼 위험 회피
+        //   총 transcript 가 200자 미만이면 Gemini 호출 우회하고 fallback 질문 사용 (메인 흐름 그대로 타기)
+        const totalTranscriptLen = chunks.reduce((s, c) => s + ((c.transcript || "").length), 0);
+        const useTranscriptFallback = totalTranscriptLen < 200;
+        if (useTranscriptFallback) {
+            console.warn(`[qa-generate] transcript 빈약 (${totalTranscriptLen}자 < 200) → Gemini 우회, fallback 질문 사용`);
+        }
 
         // Gemini 한 번 호출로 best N 청크 선택 + 청크별 질문 생성
         const model = new ChatGoogleGenerativeAI({
@@ -181,23 +211,35 @@ ${chunkDigest}
   ]
 }`;
 
-        const message = new HumanMessage({ content: [{ type: "text", text: prompt }] });
-        const response = await model.invoke([message]);
-        const rawText = typeof response.content === "string" ? response.content : (response.content[0]?.text ?? "");
-        const json = extractJSON(rawText).trim();
-        console.log(`[qa-generate] Gemini 원시 응답 (앞 400자): ${json.slice(0, 400)}`);
+        let rawQuestions = [];
 
-        let parsed;
-        try {
-            parsed = JSON.parse(json);
-        } catch (e) {
-            console.error(`[qa-generate] JSON 파싱 실패: ${e.message}`);
-            return Response.json({ error: "Gemini 응답 파싱 실패: " + e.message }, { status: 500 });
+        if (useTranscriptFallback) {
+            // ★ Gemini 호출 자체 우회
+            rawQuestions = buildFallbackQuestions(totalQuestions);
+        } else {
+            // 정상 흐름: Gemini 호출
+            try {
+                const message = new HumanMessage({ content: [{ type: "text", text: prompt }] });
+                const response = await model.invoke([message]);
+                const rawText = typeof response.content === "string" ? response.content : (response.content[0]?.text ?? "");
+                const json = extractJSON(rawText).trim();
+                console.log(`[qa-generate] Gemini 원시 응답 (앞 400자): ${json.slice(0, 400)}`);
+
+                try {
+                    const parsed = JSON.parse(json);
+                    rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+                } catch (e) {
+                    console.error(`[qa-generate] JSON 파싱 실패 → fallback 질문 사용: ${e.message}`);
+                    // ★ 파싱 실패해도 죽지 않고 fallback 질문으로 진행 (Q&A 흐름 보존)
+                }
+            } catch (geminiErr) {
+                console.error(`[qa-generate] Gemini 호출 실패 → fallback 질문 사용: ${geminiErr.message}`);
+            }
         }
 
-        const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
         if (rawQuestions.length === 0) {
-            return Response.json({ error: "Gemini 가 질문을 생성하지 못했습니다." }, { status: 500 });
+            console.warn(`[qa-generate] 질문 0개 → fallback 질문 사용`);
+            rawQuestions = buildFallbackQuestions(totalQuestions);
         }
 
         // 캐릭터 선택 — 매번 다른 인덱스 (genderMap 길이 안에서)
