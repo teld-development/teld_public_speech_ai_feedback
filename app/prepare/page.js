@@ -63,10 +63,16 @@ export default function PreparePage() {
     const buildPrepareData = async () => {
         let materialData = null;
         if (presentationMaterial) {
-            const buffer = await presentationMaterial.arrayBuffer();
-            const base64 = btoa(
-                new Uint8Array(buffer).reduce((d, b) => d + String.fromCharCode(b), "")
-            );
+            // ★ FileReader.readAsDataURL — 네이티브 C++ 코드, 메인 스레드 비차단, O(n).
+            //   이전: Uint8Array.reduce + String.fromCharCode 매 byte concat = O(n²) → 5MB PDF 가 5~15초 블록 → 클릭 여러 번 눌러야 동작하는 것처럼 보임.
+            const dataUrl = await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(fr.error);
+                fr.readAsDataURL(presentationMaterial);
+            });
+            // "data:application/pdf;base64,xxxxxxx" → "xxxxxxx" 추출
+            const base64 = (typeof dataUrl === "string" ? dataUrl.split(",")[1] : "") || "";
             materialData = {
                 name: presentationMaterial.name,
                 type: presentationMaterial.type,
