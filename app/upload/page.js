@@ -2,11 +2,16 @@
 
 import { Suspense, useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
 import { useAuth } from "../lib/AuthProvider";
+import { storage } from "../lib/firebase";
 import {
     buildRecordingUpload,
     createPresentationAttempt,
+    deletePresentationAttempt,
+    failPresentationAttempt,
     getPresentationSession,
+    markAttemptAnalyzing,
 } from "../lib/presentations";
 
 // IndexedDB 유틸리티
@@ -48,6 +53,7 @@ function UploadPageContent() {
     const [videoFile, setVideoFile] = useState(null);
     const [dragActive, setDragActive] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
     const [error, setError] = useState("");
 
     // prepare 페이지에서 저장된 정보 가져오기
@@ -143,13 +149,18 @@ function UploadPageContent() {
         if (!videoFile || !user) return;
 
         setUploading(true);
+        setUploadProgress(0);
         setError("");
 
+        let attempt = null;
+        let createdAttemptPresentationId = null;
+        let uploadedStoragePath = null;
+
         try {
-            let attempt = null;
             let recordingUpload = null;
 
             if (presentationId) {
+                createdAttemptPresentationId = presentationId;
                 attempt = await createPresentationAttempt(user, presentationId, "upload");
                 recordingUpload = buildRecordingUpload({
                     ownerUid: user.uid,
@@ -159,6 +170,73 @@ function UploadPageContent() {
                     fileName: videoFile.name || `upload_${attempt.id}.mp4`,
                     mimeType: videoFile.type || "video/mp4",
                 });
+
+                const uploadResult = await new Promise((resolve, reject) => {
+                    const ref = storageRef(storage, recordingUpload.rawVideoPath);
+                    uploadedStoragePath = recordingUpload.rawVideoPath;
+                    const task = uploadBytesResumable(ref, videoFile, {
+                        contentType: videoFile.type || recordingUpload.mimeType || "video/mp4",
+                        customMetadata: {
+                            ownerUid: user.uid,
+                            presentationId,
+                            attemptId: attempt.id,
+                            sourceType: "upload",
+                        },
+                    });
+
+                    task.on(
+                        "state_changed",
+                        (snapshot) => {
+                            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                            setUploadProgress(pct);
+                        },
+                        reject,
+                        async () => {
+                            try {
+                                const url = await getDownloadURL(task.snapshot.ref);
+                                resolve({
+                                    url,
+                                    storagePath: recordingUpload.rawVideoPath,
+                                    fileName: recordingUpload.fileName || videoFile.name,
+                                    mimeType: videoFile.type || recordingUpload.mimeType || "video/mp4",
+                                });
+                            } catch (downloadUrlErr) {
+                                reject(downloadUrlErr);
+                            }
+                        }
+                    );
+                });
+
+                await markAttemptAnalyzing(user, presentationId, attempt.id, {
+                    video: {
+                        videoUrl: uploadResult.url,
+                        storagePath: uploadResult.storagePath,
+                        fileName: uploadResult.fileName,
+                        mimeType: uploadResult.mimeType,
+                    },
+                });
+
+                sessionStorage.setItem("pendingAnalysis", JSON.stringify({
+                    blobResult: uploadResult,
+                    name: videoFile.name,
+                    type: videoFile.type || "video/mp4",
+                    presentationId,
+                    attemptId: attempt.id,
+                    attemptNo: attempt.attemptNo,
+                    recordingUpload,
+                    prepareData: {
+                        ...prepareData,
+                        presentationId,
+                        attemptId: attempt.id,
+                        attemptNo: attempt.attemptNo,
+                        recordingUpload,
+                        ownerUid: prepareData.ownerUid || user.uid,
+                        ownerEmail: prepareData.ownerEmail || user.email || "",
+                    },
+                }));
+
+                router.push("/loading");
+                return;
             }
 
             // 비디오 파일을 ArrayBuffer로 변환하여 IndexedDB에 저장
@@ -188,8 +266,33 @@ function UploadPageContent() {
 
         } catch (err) {
             console.error("업로드 오류:", err);
-            setError(err.message || "영상 준비 중 오류가 발생했습니다.");
+            if (uploadedStoragePath) {
+                try {
+                    await deleteObject(storageRef(storage, uploadedStoragePath));
+                } catch (cleanupErr) {
+                    console.warn("[Upload] 실패한 업로드 파일 정리 실패:", cleanupErr);
+                }
+            }
+            if (createdAttemptPresentationId && attempt?.id) {
+                try {
+                    await deletePresentationAttempt(user, createdAttemptPresentationId, attempt.id);
+                } catch (cleanupErr) {
+                    console.warn("[Upload] 실패한 업로드 회차 삭제 실패:", cleanupErr);
+                    try {
+                        await failPresentationAttempt(
+                            user,
+                            createdAttemptPresentationId,
+                            attempt.id,
+                            err.message || "영상 업로드 중 오류가 발생했습니다."
+                        );
+                    } catch (failErr) {
+                        console.warn("[Upload] 실패한 업로드 회차 상태 저장 실패:", failErr);
+                    }
+                }
+            }
+            setError(err.message || "영상 업로드 중 오류가 발생했습니다.");
             setUploading(false);
+            setUploadProgress(0);
         }
     };
 
@@ -275,7 +378,7 @@ function UploadPageContent() {
                             {uploading && (
                                 <div className="upload-preparing">
                                     <div className="preparing-spinner"></div>
-                                    <span>분석 준비 중...</span>
+                                    <span>{presentationId ? `영상 업로드 중... ${uploadProgress}%` : "분석 준비 중..."}</span>
                                 </div>
                             )}
                         </div>
@@ -314,7 +417,7 @@ function UploadPageContent() {
                         disabled={!videoFile || uploading}
                         onClick={handleUpload}
                     >
-                        {uploading ? "준비 중..." : "분석 시작하기"}
+                        {uploading ? (presentationId ? `업로드 중 ${uploadProgress}%` : "준비 중...") : "분석 시작하기"}
                     </button>
                 </div>
             </div>

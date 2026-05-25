@@ -4,12 +4,37 @@ import { GoogleAIFileManager } from "@google/generative-ai/server";
 import { del } from "@vercel/blob";
 import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS } from "../../lib/feedbackAreas";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
+
+const FILE_PROCESSING_POLL_MS = 1500;
+const VIDEO_PROCESSING_MAX_WAIT_MS = 180000;
+const MATERIAL_PROCESSING_MAX_WAIT_MS = 45000;
 
 // ── 유틸: JSON 추출 ──────────────────────────────────────────────────────────
 function extractJSON(text) {
     const fenced = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
     return fenced ? fenced[1] : text;
+}
+
+async function waitForActiveFile(fileManager, fileName, { maxWaitMs, label }) {
+    const startedAt = Date.now();
+    let file = await fileManager.getFile(fileName);
+
+    while (file.state === "PROCESSING" && Date.now() - startedAt < maxWaitMs) {
+        await new Promise((resolve) => setTimeout(resolve, FILE_PROCESSING_POLL_MS));
+        file = await fileManager.getFile(fileName);
+    }
+
+    if (file.state === "FAILED") {
+        throw new Error(`${label} 처리에 실패했습니다.`);
+    }
+
+    if (file.state === "PROCESSING") {
+        const seconds = Math.round(maxWaitMs / 1000);
+        throw new Error(`${label} 처리 시간이 ${seconds}초를 초과했습니다. 잠시 후 다시 시도하거나 더 짧은 영상을 사용해주세요.`);
+    }
+
+    return file;
 }
 
 // ── 카테고리별 타임스탬프 + 항목별 점수 분석 ─────────────────────────────────
@@ -229,16 +254,10 @@ export async function POST(request) {
             fs.unlinkSync(tempFilePath);
         }
 
-        // 파일 처리 대기 (1.5초 × 최대 20회 = 30초)
-        let file = await fileManager.getFile(uploadResult.file.name);
-        let waitCount = 0;
-        while (file.state === "PROCESSING" && waitCount < 20) {
-            await new Promise((r) => setTimeout(r, 1500));
-            file = await fileManager.getFile(uploadResult.file.name);
-            waitCount++;
-        }
-        if (file.state === "FAILED") throw new Error("영상 처리에 실패했습니다.");
-        if (file.state === "PROCESSING") throw new Error("영상 처리 시간이 초과되었습니다. 더 짧은 영상을 사용해주세요.");
+        const file = await waitForActiveFile(fileManager, uploadResult.file.name, {
+            maxWaitMs: VIDEO_PROCESSING_MAX_WAIT_MS,
+            label: "영상",
+        });
 
         // ── 발표 자료 업로드 (선택) ───────────────────────────────────────────
         let materialFile = null;
@@ -261,13 +280,10 @@ export async function POST(request) {
                         fs.unlinkSync(materialTempPath);
                     }
 
-                    materialFile = await fileManager.getFile(mUpload.file.name);
-                    let mWait = 0;
-                    while (materialFile.state === "PROCESSING" && mWait < 10) {
-                        await new Promise((r) => setTimeout(r, 1500));
-                        materialFile = await fileManager.getFile(mUpload.file.name);
-                        mWait++;
-                    }
+                    materialFile = await waitForActiveFile(fileManager, mUpload.file.name, {
+                        maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
+                        label: "발표 자료",
+                    });
                     if (materialFile.state !== "ACTIVE") materialFile = null;
                 }
             } catch (e) {
