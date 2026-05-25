@@ -13,13 +13,30 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+const requiredFirebaseConfig = [
+  firebaseConfig.apiKey,
+  firebaseConfig.authDomain,
+  firebaseConfig.projectId,
+  firebaseConfig.storageBucket,
+  firebaseConfig.messagingSenderId,
+  firebaseConfig.appId,
+];
+
+export const isFirebaseConfigured = requiredFirebaseConfig.every(Boolean);
+
+if (!isFirebaseConfigured && typeof window !== "undefined") {
+  console.error("[Firebase] NEXT_PUBLIC_FIREBASE_* 환경변수가 설정되지 않았습니다.");
+}
+
+export const app = isFirebaseConfigured
+  ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
+  : null;
+export const auth = app ? getAuth(app) : null;
+export const db = app ? getFirestore(app) : null;
+export const storage = app ? getStorage(app) : null;
 
 export async function getFirebaseAnalytics() {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined" || !app) return null;
   const { isSupported, getAnalytics } = await import("firebase/analytics");
   if (!(await isSupported())) return null;
   return getAnalytics(app);

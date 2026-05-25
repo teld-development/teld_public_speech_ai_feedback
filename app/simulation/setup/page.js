@@ -330,72 +330,121 @@ function SimulationSetupPageContent() {
                 }, { merge: true });
             }
 
-            // 4) (선택) 백엔드 /session/create 호출 - 기존 Unity와 호환
-            try {
-                const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://xr-zihe.onrender.com";
-                const studentId = `web_${code}`; // 새 웹은 학번 없음, 코드로 대체
-                const backendPayload = {
-                    studentId,
-                    grade: "대학교",
-                    subject: prepareData.topic || "",
-                    domain: "발표",
-                    achievement: "공적 말하기 역량",
-                    lessonObjective: prepareData.topic || "",
-                    pdfUrl: pdfUrl || "",
-                    difficulty: "중급",
-                    students,
-                };
-                const backendRes = await fetch(`${backendUrl}/session/create`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(backendPayload),
-                });
-                if (backendRes.ok) {
-                    const backendData = await backendRes.json();
-                    console.log("[Setup] 백엔드 /session/create 성공:", backendData);
-                    // 백엔드의 accessCode와 동일하게 맞추기 위해 Firestore 업데이트
-                    // (백엔드는 자체 코드 발급. Unity는 그 코드 사용)
-                    if (backendData.accessCode && backendData.accessCode !== code) {
-                        const backendRecordingUpload = attempt ? buildRecordingUpload({
-                            ownerUid: user.uid,
-                            presentationId,
-                            attemptId: attempt.id,
-                            code: backendData.accessCode,
-                            sourceType: "simulation",
-                        }) : null;
+            // 4) ★ 백엔드 /session/create 호출 — 필수 (Unity 가 코드로 claim 하려면 백엔드 store 에 등록되어 있어야 함)
+            //    Render 무료 티어 cold start 대비:
+            //    a) ping 으로 미리 깨움 (최대 60초 대기)
+            //    b) /session/create 호출 (실패 시 최대 3회 재시도)
+            //    c) 모두 실패하면 사용자에게 명확히 안내 (silent fallback 안 함)
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://xr-zihe.onrender.com";
 
-                        // 백엔드 코드로 새 Firestore 문서 만들기
-                        await setDoc(doc(db, "simulations", backendData.accessCode), {
-                            ...simulationPayload,
-                            recordingUpload: backendRecordingUpload,
-                            backendCode: backendData.accessCode,
-                            backendSessionId: backendData.sessionId,
-                        });
-                        if (attempt) {
-                            await setDoc(attempt.ref, {
-                                simulation: {
-                                    code: backendData.accessCode,
-                                    backendSessionId: backendData.sessionId,
-                                    crowdSize,
-                                    audienceCount,
-                                    ratios,
-                                },
-                                recordingUpload: backendRecordingUpload,
-                                updatedAt: serverTimestamp(),
-                            }, { merge: true });
-                        }
-                        sessionStorage.setItem("simulationCode", backendData.accessCode);
-                        router.push(`/simulation/${backendData.accessCode}`);
-                        return;
-                    }
-                } else {
-                    console.warn("[Setup] 백엔드 호출 실패 (비크리티컬):", await backendRes.text());
+            // a) 서버 깨우기 — ping (cold start 시 30~60초 걸림)
+            try {
+                console.log("[Setup] 백엔드 ping 으로 깨우는 중...");
+                const pingCtrl = new AbortController();
+                const pingTimer = setTimeout(() => pingCtrl.abort(), 75_000);
+                const pingRes = await fetch(`${backendUrl}/ping`, { signal: pingCtrl.signal, cache: "no-store" });
+                clearTimeout(pingTimer);
+                if (!pingRes.ok) {
+                    throw new Error(`ping 응답 ${pingRes.status}`);
                 }
-            } catch (backendErr) {
-                // 백엔드 실패해도 Firestore-only 모드로 계속 진행
-                console.warn("[Setup] 백엔드 연결 실패 (Firestore-only 모드):", backendErr);
+                console.log("[Setup] 백엔드 깨움 OK");
+            } catch (pingErr) {
+                console.error("[Setup] 백엔드 ping 실패:", pingErr);
+                setError(
+                    "서버 연결 실패: 백엔드를 깨우는 데 실패했습니다.\n" +
+                    "잠시 후 다시 시도해주세요. (Render 무료 티어 슬립 상태일 수 있음)"
+                );
+                return;  // session/create 진행 안 함
             }
 
+            // b) /session/create 호출 — 최대 3회 재시도
+            const studentId = `web_${code}`;
+            const backendPayload = {
+                studentId,
+                grade: "대학교",
+                subject: prepareData.topic || "",
+                domain: "발표",
+                achievement: "공적 말하기 역량",
+                lessonObjective: prepareData.topic || "",
+                pdfUrl: pdfUrl || "",
+                difficulty: "중급",
+                students,
+            };
+
+            let backendData = null;
+            let backendErrMsg = "";
+            for (let attemptNum = 1; attemptNum <= 3; attemptNum++) {
+                try {
+                    console.log(`[Setup] /session/create 시도 ${attemptNum}/3`);
+                    const ctrl = new AbortController();
+                    const timer = setTimeout(() => ctrl.abort(), 30_000);
+                    const backendRes = await fetch(`${backendUrl}/session/create`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(backendPayload),
+                        signal: ctrl.signal,
+                    });
+                    clearTimeout(timer);
+                    if (backendRes.ok) {
+                        backendData = await backendRes.json();
+                        console.log("[Setup] /session/create 성공:", backendData);
+                        break;
+                    } else {
+                        backendErrMsg = `HTTP ${backendRes.status}: ${await backendRes.text()}`;
+                        console.warn(`[Setup] 시도 ${attemptNum} 실패: ${backendErrMsg}`);
+                    }
+                } catch (e) {
+                    backendErrMsg = e?.message || String(e);
+                    console.warn(`[Setup] 시도 ${attemptNum} 예외: ${backendErrMsg}`);
+                }
+                if (attemptNum < 3) await new Promise(r => setTimeout(r, 2000));
+            }
+
+            if (!backendData) {
+                // 3회 다 실패 — 사용자에게 명확히 안내, silent fallback 안 함
+                setError(
+                    "서버 연결 실패: /session/create 호출이 3회 모두 실패했습니다.\n" +
+                    "Unity 에서 코드 입력 시 \"유효하지 않은 코드\" 오류가 날 수 있습니다.\n" +
+                    `(상세: ${backendErrMsg})\n잠시 후 다시 시도해주세요.`
+                );
+                return;
+            }
+
+            // c) accessCode 가 자체 code 와 다르면 백엔드 코드로 Firestore 새 doc 만들기
+            if (backendData.accessCode && backendData.accessCode !== code) {
+                const backendRecordingUpload = attempt ? buildRecordingUpload({
+                    ownerUid: user.uid,
+                    presentationId,
+                    attemptId: attempt.id,
+                    code: backendData.accessCode,
+                    sourceType: "simulation",
+                }) : null;
+
+                await setDoc(doc(db, "simulations", backendData.accessCode), {
+                    ...simulationPayload,
+                    recordingUpload: backendRecordingUpload,
+                    backendCode: backendData.accessCode,
+                    backendSessionId: backendData.sessionId,
+                });
+                if (attempt) {
+                    await setDoc(attempt.ref, {
+                        simulation: {
+                            code: backendData.accessCode,
+                            backendSessionId: backendData.sessionId,
+                            crowdSize,
+                            audienceCount,
+                            ratios,
+                        },
+                        recordingUpload: backendRecordingUpload,
+                        updatedAt: serverTimestamp(),
+                    }, { merge: true });
+                }
+                sessionStorage.setItem("simulationCode", backendData.accessCode);
+                router.push(`/simulation/${backendData.accessCode}`);
+                return;
+            }
+
+            // accessCode 가 같은 경우엔 기존 code 로 진행
             sessionStorage.setItem("simulationCode", code);
             router.push(`/simulation/${code}`);
         } catch (err) {
