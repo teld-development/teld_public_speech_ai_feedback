@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/AuthProvider";
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
 import { storage } from "../lib/firebase";
-import { completePresentationAttempt, markAttemptAnalyzing } from "../lib/presentations";
+import { completePresentationAttempt, failPresentationAttempt, markAttemptAnalyzing } from "../lib/presentations";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -76,6 +76,7 @@ export default function LoadingPage() {
         }, 1000);
 
         const startAnalysis = async () => {
+            let activeAttempt = null;
             try {
                 // IndexedDB에서 비디오 데이터 가져오기
                 const videoData = await getVideoDB("pendingVideo");
@@ -87,6 +88,7 @@ export default function LoadingPage() {
                 }
 
                 const { buffer, name, type, prepareData, presentationId, attemptId, recordingUpload } = videoData;
+                activeAttempt = { presentationId, attemptId };
 
                 // ArrayBuffer를 Blob으로 변환
                 const blob = new Blob([buffer], { type });
@@ -286,6 +288,18 @@ export default function LoadingPage() {
 
             } catch (err) {
                 console.error("[Loading] 분석 오류:", err);
+                if (activeAttempt?.presentationId && activeAttempt?.attemptId) {
+                    try {
+                        await failPresentationAttempt(
+                            user,
+                            activeAttempt.presentationId,
+                            activeAttempt.attemptId,
+                            err.message || "영상 분석 중 오류가 발생했습니다."
+                        );
+                    } catch (failErr) {
+                        console.error("[Loading] 회차 실패 상태 저장 실패:", failErr);
+                    }
+                }
                 setError(err.message || "영상 분석 중 오류가 발생했습니다.");
                 clearInterval(timer);
             }

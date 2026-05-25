@@ -6,7 +6,12 @@ import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import { db, storage } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
-import { completePresentationAttempt, markAttemptAnalyzing } from "../../lib/presentations";
+import {
+    completePresentationAttempt,
+    deletePresentationAttempt,
+    failPresentationAttempt,
+    markAttemptAnalyzing,
+} from "../../lib/presentations";
 
 const STATUS_LABEL = {
     waiting: "Unity 시뮬레이션 연결 대기 중",
@@ -23,6 +28,7 @@ export default function SimulationWaitingPage({ params }) {
     const [error, setError] = useState("");
     const [elapsed, setElapsed] = useState(0);
     const [copyStatus, setCopyStatus] = useState("");
+    const [simulationData, setSimulationData] = useState(null);
     const analysisStartedRef = useRef(false);
 
     useEffect(() => {
@@ -47,6 +53,7 @@ export default function SimulationWaitingPage({ params }) {
                     return;
                 }
                 const data = snap.data();
+                setSimulationData(data);
                 setStatus(data.status || "waiting");
 
                 if (data.status === "completed" && data.result && !analysisStartedRef.current) {
@@ -63,6 +70,9 @@ export default function SimulationWaitingPage({ params }) {
                     }
 
                     if (!videoUrl) {
+                        if (data.presentationId && data.attemptId) {
+                            await failPresentationAttempt(user, data.presentationId, data.attemptId, "Unity 결과에 영상 URL이 없습니다.");
+                        }
                         setError("Unity 결과에 영상 URL이 없어 AI 분석을 실행할 수 없습니다.");
                         return;
                     }
@@ -133,6 +143,18 @@ export default function SimulationWaitingPage({ params }) {
                             router.push("/analysis");
                         } catch (err) {
                             console.error("[Simulation] AI 분석 실패:", err);
+                            if (data.presentationId && data.attemptId) {
+                                try {
+                                    await failPresentationAttempt(user, data.presentationId, data.attemptId, err.message || "AI 분석 중 오류가 발생했습니다.", {
+                                        simulation: {
+                                            code,
+                                            backendSessionId: data.backendSessionId || "",
+                                        },
+                                    });
+                                } catch (failErr) {
+                                    console.error("[Simulation] 회차 실패 상태 저장 실패:", failErr);
+                                }
+                            }
                             analysisStartedRef.current = false;
                             setError(err.message || "AI 분석 중 오류가 발생했습니다.");
                         }
@@ -168,10 +190,17 @@ export default function SimulationWaitingPage({ params }) {
         if (!confirm("시뮬레이션을 취소하시겠습니까?")) return;
         try {
             await updateDoc(doc(db, "simulations", code), { status: "cancelled" });
+            if (simulationData?.presentationId && simulationData?.attemptId) {
+                if ((simulationData.status || "waiting") === "waiting") {
+                    await deletePresentationAttempt(user, simulationData.presentationId, simulationData.attemptId);
+                } else {
+                    await failPresentationAttempt(user, simulationData.presentationId, simulationData.attemptId, "사용자가 시뮬레이션을 취소했습니다.");
+                }
+            }
         } catch (err) {
             console.error("[Simulation] 취소 실패:", err);
         }
-        router.push("/dashboard");
+        router.push(simulationData?.presentationId ? `/presentations/${simulationData.presentationId}` : "/dashboard");
     };
 
     if (error) {

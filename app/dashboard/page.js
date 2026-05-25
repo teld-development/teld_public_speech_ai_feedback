@@ -6,6 +6,7 @@ import { signOut } from "firebase/auth";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { useAuth } from "../lib/AuthProvider";
+import { deletePresentationSession } from "../lib/presentations";
 
 function formatDate(value) {
     if (!value) return "미정";
@@ -33,12 +34,27 @@ function scoreLabel(score) {
     return typeof score === "number" ? `${score.toFixed(1)}/5` : "아직 없음";
 }
 
+const SESSION_FILTERS = [
+    { id: "active", label: "진행 세션" },
+    { id: "upcoming", label: "D-day 예정" },
+    { id: "scored", label: "분석 있음" },
+    { id: "all", label: "전체" },
+];
+
+function sessionStateLabel(presentation) {
+    if (presentation.status === "archived") return "보관됨";
+    if (typeof presentation.latestScoreAverage === "number") return "분석 있음";
+    return "준비 중";
+}
+
 export default function DashboardPage() {
     const router = useRouter();
     const { user, authLoading } = useAuth();
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+    const [sessionFilter, setSessionFilter] = useState("active");
     const [presentations, setPresentations] = useState([]);
     const [loadingPresentations, setLoadingPresentations] = useState(true);
+    const [deletingPresentationId, setDeletingPresentationId] = useState("");
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -75,12 +91,49 @@ export default function DashboardPage() {
     const stats = useMemo(() => {
         const totalAttempts = presentations.reduce((sum, item) => sum + (item.attemptCount || 0), 0);
         const activeCount = presentations.filter((item) => item.status !== "archived").length;
-        return { totalAttempts, activeCount };
+        const scoredCount = presentations.filter((item) => typeof item.latestScoreAverage === "number").length;
+        const upcomingCount = presentations.filter((item) => {
+            const daysLeft = getDaysLeft(item.dday);
+            return item.status !== "archived" && daysLeft != null && daysLeft >= 0;
+        }).length;
+        return { totalAttempts, activeCount, scoredCount, upcomingCount };
     }, [presentations]);
+
+    const filteredPresentations = useMemo(() => {
+        if (sessionFilter === "all") return presentations;
+        if (sessionFilter === "scored") {
+            return presentations.filter((item) => typeof item.latestScoreAverage === "number");
+        }
+        if (sessionFilter === "upcoming") {
+            return presentations.filter((item) => {
+                const daysLeft = getDaysLeft(item.dday);
+                return item.status !== "archived" && daysLeft != null && daysLeft >= 0;
+            });
+        }
+        return presentations.filter((item) => item.status !== "archived");
+    }, [presentations, sessionFilter]);
 
     const handleLogout = async () => {
         await signOut(auth);
         router.replace("/");
+    };
+
+    const openPresentation = (presentationId) => {
+        router.push(`/presentations/${presentationId}`);
+    };
+
+    const handleDeletePresentation = async (event, presentation) => {
+        event.stopPropagation();
+        if (!confirm(`"${presentation.title || "발표"}" 세션을 삭제하시겠습니까?`)) return;
+        setDeletingPresentationId(presentation.id);
+        try {
+            await deletePresentationSession(user, presentation.id);
+        } catch (err) {
+            console.error("[Dashboard] 발표 삭제 실패:", err);
+            setError("발표 세션을 삭제하지 못했습니다.");
+        } finally {
+            setDeletingPresentationId("");
+        }
     };
 
     if (authLoading || !user) {
@@ -140,6 +193,27 @@ export default function DashboardPage() {
                             <span>누적 연습 횟수</span>
                             <strong>{stats.totalAttempts}</strong>
                         </div>
+                        <div className="session-stat">
+                            <span>분석 보유 세션</span>
+                            <strong>{stats.scoredCount}</strong>
+                        </div>
+                        <div className="session-stat">
+                            <span>D-day 예정</span>
+                            <strong>{stats.upcomingCount}</strong>
+                        </div>
+                    </section>
+
+                    <section className="session-filter-row" aria-label="세션 필터">
+                        {SESSION_FILTERS.map((filter) => (
+                            <button
+                                key={filter.id}
+                                type="button"
+                                className={`session-filter-btn ${sessionFilter === filter.id ? "active" : ""}`}
+                                onClick={() => setSessionFilter(filter.id)}
+                            >
+                                {filter.label}
+                            </button>
+                        ))}
                     </section>
 
                     {error && <p className="session-error">{error}</p>}
@@ -153,19 +227,32 @@ export default function DashboardPage() {
                             <h2>아직 발표가 없습니다</h2>
                             <p>발표 추가를 눌러 주제, 예상 청중, D-day를 먼저 설정하세요.</p>
                         </section>
+                    ) : filteredPresentations.length === 0 ? (
+                        <section className="session-empty">
+                            <h2>조건에 맞는 세션이 없습니다</h2>
+                            <p>다른 필터를 선택하거나 새 발표 세션을 추가하세요.</p>
+                        </section>
                     ) : (
                         <section className="presentation-grid">
-                            {presentations.map((presentation) => (
-                                <button
+                            {filteredPresentations.map((presentation) => (
+                                <div
                                     key={presentation.id}
-                                    type="button"
+                                    role="button"
+                                    tabIndex={0}
                                     className="presentation-card"
-                                    onClick={() => router.push(`/presentations/${presentation.id}`)}
+                                    onClick={() => openPresentation(presentation.id)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault();
+                                            openPresentation(presentation.id);
+                                        }
+                                    }}
                                 >
                                     <div className="presentation-card-top">
                                         <span className="presentation-dday">{ddayLabel(presentation.dday)}</span>
                                         <span className="presentation-date">{formatDate(presentation.dday)}</span>
                                     </div>
+                                    <span className="presentation-state">{sessionStateLabel(presentation)}</span>
                                     <h2>{presentation.title || "발표"}</h2>
                                     <p>{presentation.topic || "주제 미입력"}</p>
                                     <div className="presentation-meta-row">
@@ -176,7 +263,15 @@ export default function DashboardPage() {
                                         <span>최근 평균</span>
                                         <strong>{scoreLabel(presentation.latestScoreAverage)}</strong>
                                     </div>
-                                </button>
+                                    <button
+                                        type="button"
+                                        className="presentation-delete-btn"
+                                        onClick={(event) => handleDeletePresentation(event, presentation)}
+                                        disabled={deletingPresentationId === presentation.id}
+                                    >
+                                        {deletingPresentationId === presentation.id ? "삭제 중" : "삭제"}
+                                    </button>
+                                </div>
                             ))}
                         </section>
                     )}

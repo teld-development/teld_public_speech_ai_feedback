@@ -1,12 +1,14 @@
 import {
     addDoc,
     collection,
+    deleteDoc,
     doc,
     getDoc,
-    increment,
+    getDocs,
     runTransaction,
     serverTimestamp,
     updateDoc,
+    writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { FEEDBACK_CATEGORIES } from "./feedbackAreas";
@@ -144,6 +146,84 @@ export async function markAttemptAnalyzing(user, presentationId, attemptId, patc
         status: "analyzing",
         updatedAt: serverTimestamp(),
     });
+}
+
+export async function failPresentationAttempt(user, presentationId, attemptId, errorMessage, patch = {}) {
+    if (!user?.uid) throw new Error("로그인이 필요합니다.");
+    const attemptRef = doc(db, "users", user.uid, "presentations", presentationId, "attempts", attemptId);
+    await updateDoc(attemptRef, {
+        ...patch,
+        status: "failed",
+        errorMessage: errorMessage || "처리 중 오류가 발생했습니다.",
+        failedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+    });
+}
+
+export async function deletePresentationAttempt(user, presentationId, attemptId) {
+    if (!user?.uid) throw new Error("로그인이 필요합니다.");
+    const presentationRef = doc(db, "users", user.uid, "presentations", presentationId);
+    const attemptRef = doc(presentationRef, "attempts", attemptId);
+    await deleteDoc(attemptRef);
+    await normalizePresentationAttempts(user, presentationId);
+}
+
+export async function normalizePresentationAttempts(user, presentationId) {
+    if (!user?.uid) throw new Error("로그인이 필요합니다.");
+
+    const presentationRef = doc(db, "users", user.uid, "presentations", presentationId);
+    const attemptsSnap = await getDocs(collection(presentationRef, "attempts"));
+    const attempts = attemptsSnap.docs
+        .map((docSnap) => ({ id: docSnap.id, ref: docSnap.ref, ...docSnap.data() }))
+        .sort((a, b) => {
+            const attemptDiff = (a.attemptNo || 0) - (b.attemptNo || 0);
+            if (attemptDiff !== 0) return attemptDiff;
+            const aTime = a.createdAt?.toMillis?.() || 0;
+            const bTime = b.createdAt?.toMillis?.() || 0;
+            return aTime - bTime;
+        });
+
+    const batch = writeBatch(db);
+    attempts.forEach((attempt, index) => {
+        const nextAttemptNo = index + 1;
+        if (attempt.attemptNo !== nextAttemptNo) {
+            batch.update(attempt.ref, {
+                attemptNo: nextAttemptNo,
+                updatedAt: serverTimestamp(),
+            });
+            attempt.attemptNo = nextAttemptNo;
+        }
+    });
+
+    const completedAttempts = attempts.filter((attempt) => attempt.status === "completed");
+    const latestCompleted = completedAttempts[completedAttempts.length - 1] || null;
+
+    batch.update(presentationRef, {
+        attemptCount: attempts.length,
+        latestAttemptId: latestCompleted?.id || null,
+        latestScoreAverage: latestCompleted?.scoreAverage ?? null,
+        categoryAverages: latestCompleted?.categoryAverages || {
+            visual: null,
+            verbal: null,
+            media: null,
+        },
+        updatedAt: serverTimestamp(),
+    });
+
+    await batch.commit();
+}
+
+export async function deletePresentationSession(user, presentationId) {
+    if (!user?.uid) throw new Error("로그인이 필요합니다.");
+
+    const presentationRef = doc(db, "users", user.uid, "presentations", presentationId);
+    const attemptsSnap = await getDocs(collection(presentationRef, "attempts"));
+    const batch = writeBatch(db);
+    attemptsSnap.docs.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+    });
+    batch.delete(presentationRef);
+    await batch.commit();
 }
 
 export async function completePresentationAttempt(user, presentationId, attemptId, analysisResult, patch = {}) {
