@@ -3,13 +3,102 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
-import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
-import { deletePresentationAttempt, deletePresentationSession } from "../../lib/presentations";
+import { convertAndUploadPdfFromUrl } from "../../lib/pdfToImages";
+import {
+    buildRecordingUpload,
+    createPresentationAttempt,
+    deletePresentationAttempt,
+    deletePresentationSession,
+} from "../../lib/presentations";
 
 const WAITING_CLEANUP_MINUTES = 30;
+const DB_NAME = "VideoAnalysisDB";
+const STORE_NAME = "pendingVideos";
+
+const CROWD_SIZE_OPTIONS = [
+    { id: "small", label: "소집단", desc: "5명", count: 5 },
+    { id: "medium", label: "중집단", desc: "10명", count: 10 },
+    { id: "large", label: "대집단", desc: "16명", count: 16 },
+];
+
+const PERSONALITY_TYPES = [
+    { id: "friendly", label: "우호적", desc: "관심 갖고 경청", color: "#22c55e" },
+    { id: "normal", label: "평범함", desc: "보통 청중", color: "#3b82f6" },
+    { id: "critical", label: "비판적", desc: "근거 요구", color: "#eab308" },
+    { id: "sharp", label: "날카로움", desc: "논리 허점 지적", color: "#f97316" },
+    { id: "disinterested", label: "무관심", desc: "집중력 낮음", color: "#94a3b8" },
+];
+
+const PERSONALITY_KR = {
+    friendly: "우호적",
+    normal: "평범함",
+    critical: "비판적",
+    sharp: "날카로움",
+    disinterested: "무관심",
+};
+
+const AUDIENCE_PRESETS = [
+    {
+        id: "supportive",
+        label: "협조적 학습자",
+        desc: "호의적 분위기에서 발표 흐름을 먼저 확인합니다.",
+        ratios: { friendly: 60, normal: 25, critical: 10, sharp: 5, disinterested: 0 },
+    },
+    {
+        id: "standard",
+        label: "표준 강의실",
+        desc: "일반적인 수업 환경의 균형 잡힌 청중입니다.",
+        ratios: { friendly: 30, normal: 40, critical: 15, sharp: 10, disinterested: 5 },
+    },
+    {
+        id: "diverse",
+        label: "다양성 우선",
+        desc: "다섯 가지 반응을 골고루 경험하고 싶을 때 선택합니다.",
+        ratios: { friendly: 20, normal: 20, critical: 20, sharp: 20, disinterested: 20 },
+    },
+    {
+        id: "evaluation",
+        label: "비판적 평가",
+        desc: "심사나 면접처럼 까다로운 청중을 가정합니다.",
+        ratios: { friendly: 10, normal: 20, critical: 35, sharp: 30, disinterested: 5 },
+    },
+    {
+        id: "lowengagement",
+        label: "저관여 환경",
+        desc: "주의가 산만한 청중 앞에서 집중을 유지합니다.",
+        ratios: { friendly: 10, normal: 30, critical: 15, sharp: 10, disinterested: 35 },
+    },
+];
+
+const generateSimulationCode = () =>
+    String(Math.floor(100000 + Math.random() * 900000));
+
+const openDB = () => new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+        const dbInstance = event.target.result;
+        if (!dbInstance.objectStoreNames.contains(STORE_NAME)) {
+            dbInstance.createObjectStore(STORE_NAME);
+        }
+    };
+});
+
+const saveVideoDB = async (key, data) => {
+    const dbInstance = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction(STORE_NAME, "readwrite");
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put(data, key);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+    });
+};
 
 const ATTEMPT_STATUS_META = {
     pending: { label: "준비 중", tone: "muted" },
@@ -120,10 +209,51 @@ function buildCategoryGrowthSeries(completedAttempts) {
     });
 }
 
+function ratioToStudents(ratios) {
+    const total = 8;
+    const students = [];
+    let remaining = total;
+    const sorted = Object.entries(ratios)
+        .filter(([, pct]) => pct > 0)
+        .sort((a, b) => b[1] - a[1]);
+
+    sorted.forEach(([key, pct], idx) => {
+        const isLast = idx === sorted.length - 1;
+        const count = isLast ? remaining : Math.round((pct / 100) * total);
+        for (let i = 0; i < count && remaining > 0; i += 1) {
+            students.push({
+                studentId: `청중${students.length + 1}`,
+                personality: PERSONALITY_KR[key],
+                extraDetail: "",
+            });
+            remaining -= 1;
+        }
+    });
+
+    while (students.length < total) {
+        students.push({
+            studentId: `청중${students.length + 1}`,
+            personality: "평범함",
+            extraDetail: "",
+        });
+    }
+
+    return students;
+}
+
+function formatFileSize(bytes) {
+    if (!bytes) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
 export default function PresentationDetailPage({ params }) {
     const router = useRouter();
     const { presentationId } = params;
     const { user, authLoading } = useAuth();
+    const fileInputRef = useRef(null);
     const [accountMenuOpen, setAccountMenuOpen] = useState(false);
     const [presentation, setPresentation] = useState(null);
     const [attempts, setAttempts] = useState([]);
@@ -131,6 +261,17 @@ export default function PresentationDetailPage({ params }) {
     const [error, setError] = useState("");
     const [cleanupMessage, setCleanupMessage] = useState("");
     const [deletingPresentation, setDeletingPresentation] = useState(false);
+    const [activeModal, setActiveModal] = useState("");
+    const [videoFile, setVideoFile] = useState(null);
+    const [dragActive, setDragActive] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [modalError, setModalError] = useState("");
+    const [crowdSize, setCrowdSize] = useState("medium");
+    const [ratios, setRatios] = useState(AUDIENCE_PRESETS[1].ratios);
+    const [selectedPreset, setSelectedPreset] = useState("standard");
+    const [showCustomAudience, setShowCustomAudience] = useState(false);
+    const [startingSimulation, setStartingSimulation] = useState(false);
+    const [simulationStatus, setSimulationStatus] = useState("");
     const cleanedAttemptIdsRef = useRef(new Set());
 
     useEffect(() => {
@@ -184,16 +325,6 @@ export default function PresentationDetailPage({ params }) {
         [attempts]
     );
 
-    const activeAttempts = useMemo(
-        () => attempts.filter((attempt) => ["pending", "waiting", "analyzing"].includes(attempt.status)),
-        [attempts]
-    );
-
-    const failedAttempts = useMemo(
-        () => attempts.filter((attempt) => ["failed", "cancelled"].includes(attempt.status)),
-        [attempts]
-    );
-
     const cleanupTargets = useMemo(
         () => attempts.filter(isWaitingCleanupTarget),
         [attempts]
@@ -203,6 +334,24 @@ export default function PresentationDetailPage({ params }) {
         () => buildCategoryGrowthSeries(completedAttempts),
         [completedAttempts]
     );
+
+    const totalRatio = useMemo(
+        () => Object.values(ratios).reduce((sum, value) => sum + value, 0),
+        [ratios]
+    );
+
+    const ratiosValid = totalRatio === 100;
+
+    const selectedAudienceDetail = useMemo(() => {
+        if (selectedPreset === "custom") {
+            return {
+                label: "사용자 정의",
+                desc: "직접 설정한 청중 성격 비율입니다.",
+                ratios,
+            };
+        }
+        return AUDIENCE_PRESETS.find((preset) => preset.id === selectedPreset) || AUDIENCE_PRESETS[1];
+    }, [ratios, selectedPreset]);
 
     useEffect(() => {
         if (!user || !presentationId || cleanupTargets.length === 0) return;
@@ -237,6 +386,295 @@ export default function PresentationDetailPage({ params }) {
     const handleLogout = async () => {
         await signOut(auth);
         router.replace("/");
+    };
+
+    const closeModal = () => {
+        if (uploading || startingSimulation) return;
+        setActiveModal("");
+        setVideoFile(null);
+        setDragActive(false);
+        setModalError("");
+        setSimulationStatus("");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    const openModal = (mode) => {
+        setModalError("");
+        setSimulationStatus("");
+        setActiveModal(mode);
+    };
+
+    const handleDrag = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === "dragenter" || event.type === "dragover") {
+            setDragActive(true);
+        } else if (event.type === "dragleave") {
+            setDragActive(false);
+        }
+    };
+
+    const selectVideoFile = (file) => {
+        if (!file) return;
+        if (!file.type.startsWith("video/")) {
+            setModalError("동영상 파일만 업로드할 수 있습니다.");
+            return;
+        }
+        setVideoFile(file);
+        setModalError("");
+    };
+
+    const handleDrop = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setDragActive(false);
+        selectVideoFile(event.dataTransfer.files?.[0]);
+    };
+
+    const handleFileChange = (event) => {
+        selectVideoFile(event.target.files?.[0]);
+    };
+
+    const handleUploadVideo = async () => {
+        if (!videoFile || !user || !presentation) return;
+        setUploading(true);
+        setModalError("");
+
+        try {
+            const attempt = await createPresentationAttempt(user, presentationId, "upload");
+            const recordingUpload = buildRecordingUpload({
+                ownerUid: user.uid,
+                presentationId,
+                attemptId: attempt.id,
+                sourceType: "upload",
+                fileName: videoFile.name || `upload_${attempt.id}.mp4`,
+                mimeType: videoFile.type || "video/mp4",
+            });
+            const arrayBuffer = await videoFile.arrayBuffer();
+
+            await saveVideoDB("pendingVideo", {
+                buffer: arrayBuffer,
+                name: videoFile.name,
+                type: videoFile.type,
+                presentationId,
+                attemptId: attempt.id,
+                attemptNo: attempt.attemptNo,
+                recordingUpload,
+                prepareData: {
+                    presentationId,
+                    attemptId: attempt.id,
+                    attemptNo: attempt.attemptNo,
+                    recordingUpload,
+                    title: presentation.title || "발표",
+                    topic: presentation.topic || "",
+                    audience: presentation.audience || "",
+                    dday: presentation.dday || "",
+                    duration: presentation.duration || "",
+                    presentationType: presentation.presentationType || "",
+                    ownerUid: user.uid,
+                    ownerEmail: user.email || "",
+                    presentationMaterial: presentation.presentationMaterial || null,
+                },
+            });
+
+            router.push("/loading");
+        } catch (err) {
+            console.error("[PresentationDetail] 영상 업로드 준비 실패:", err);
+            setModalError(err.message || "영상 준비 중 오류가 발생했습니다.");
+            setUploading(false);
+        }
+    };
+
+    const applyPreset = (preset) => {
+        setRatios({ ...preset.ratios });
+        setSelectedPreset(preset.id);
+        setShowCustomAudience(false);
+    };
+
+    const handleRatioChange = (key, value) => {
+        const num = Math.max(0, Math.min(100, parseInt(value, 10) || 0));
+        setRatios((prev) => ({ ...prev, [key]: num }));
+        setSelectedPreset("custom");
+    };
+
+    const normalizeRatios = () => {
+        if (totalRatio === 0) return;
+        const factor = 100 / totalRatio;
+        const keys = Object.keys(ratios);
+        let sum = 0;
+        const nextRatios = {};
+        keys.forEach((key, index) => {
+            if (index === keys.length - 1) {
+                nextRatios[key] = 100 - sum;
+            } else {
+                nextRatios[key] = Math.round(ratios[key] * factor);
+                sum += nextRatios[key];
+            }
+        });
+        setRatios(nextRatios);
+    };
+
+    const handleStartSimulation = async () => {
+        if (!user || !presentation || !crowdSize || !ratiosValid || startingSimulation) return;
+        setStartingSimulation(true);
+        setModalError("");
+
+        try {
+            const code = generateSimulationCode();
+            let materialMeta = null;
+            let pdfUrl = "";
+            let slideImageUrls = [];
+
+            if (presentation.presentationMaterial?.url) {
+                const mat = presentation.presentationMaterial;
+                pdfUrl = mat.url;
+                materialMeta = {
+                    name: mat.name,
+                    type: mat.type,
+                    size: mat.size || null,
+                    url: mat.url,
+                    path: mat.path || "",
+                    ownerUid: mat.ownerUid || user.uid,
+                    ownerEmail: mat.ownerEmail || user.email || "",
+                };
+
+                try {
+                    setSimulationStatus("PDF를 슬라이드 이미지로 변환 중...");
+                    const result = await convertAndUploadPdfFromUrl(mat.url, code, {
+                        ownerUid: user.uid,
+                        onProgress: (progress) => {
+                            const phaseKr = progress.phase === "convert" ? "변환" : "업로드";
+                            setSimulationStatus(`슬라이드 ${phaseKr} 중... (${progress.current}/${progress.total})`);
+                        },
+                    });
+                    slideImageUrls = result.slideImageUrls;
+                } catch (convErr) {
+                    console.warn("[PresentationDetail] PDF 이미지 변환 실패, 원본 PDF로 진행:", convErr);
+                }
+            }
+
+            setSimulationStatus("시뮬레이션 세션을 생성 중...");
+            const students = ratioToStudents(ratios);
+            const crowdSizeOpt = CROWD_SIZE_OPTIONS.find((option) => option.id === crowdSize);
+            const audienceCount = crowdSizeOpt?.count || 10;
+            const attempt = await createPresentationAttempt(user, presentationId, "simulation");
+            const recordingUpload = buildRecordingUpload({
+                ownerUid: user.uid,
+                presentationId,
+                attemptId: attempt.id,
+                code,
+                sourceType: "simulation",
+            });
+
+            const simulationPayload = {
+                title: presentation.title || "발표",
+                topic: presentation.topic || "",
+                audience: presentation.audience || "",
+                dday: presentation.dday || "",
+                duration: presentation.duration || "",
+                presentationType: presentation.presentationType || "",
+                ownerUid: user.uid,
+                ownerEmail: user.email || "",
+                presentationId,
+                attemptId: attempt.id,
+                attemptNo: attempt.attemptNo,
+                sourceType: "simulation",
+                presentation: {
+                    title: presentation.title || "발표",
+                    topic: presentation.topic || "",
+                    audience: presentation.audience || "",
+                    dday: presentation.dday || "",
+                    duration: presentation.duration || "",
+                    presentationType: presentation.presentationType || "",
+                },
+                presentationMaterial: materialMeta,
+                simulation: {
+                    crowdSize,
+                    audienceCount,
+                    ratios,
+                    students,
+                    pdfUrl,
+                    slideImageUrls,
+                    slideCount: slideImageUrls.length,
+                },
+                recordingUpload,
+                status: "waiting",
+                createdAt: serverTimestamp(),
+            };
+
+            await setDoc(doc(db, "simulations", code), simulationPayload);
+            await setDoc(attempt.ref, {
+                status: "waiting",
+                simulation: {
+                    code,
+                    crowdSize,
+                    audienceCount,
+                    ratios,
+                },
+                recordingUpload,
+                updatedAt: serverTimestamp(),
+            }, { merge: true });
+
+            try {
+                const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://xr-zihe.onrender.com";
+                const backendRes = await fetch(`${backendUrl}/session/create`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        studentId: `web_${code}`,
+                        grade: "대학교",
+                        subject: presentation.topic || "",
+                        domain: "발표",
+                        achievement: "공적 말하기 역량",
+                        lessonObjective: presentation.topic || "",
+                        pdfUrl: pdfUrl || "",
+                        difficulty: "중급",
+                        students,
+                    }),
+                });
+                if (backendRes.ok) {
+                    const backendData = await backendRes.json();
+                    if (backendData.accessCode && backendData.accessCode !== code) {
+                        const backendRecordingUpload = buildRecordingUpload({
+                            ownerUid: user.uid,
+                            presentationId,
+                            attemptId: attempt.id,
+                            code: backendData.accessCode,
+                            sourceType: "simulation",
+                        });
+                        await setDoc(doc(db, "simulations", backendData.accessCode), {
+                            ...simulationPayload,
+                            recordingUpload: backendRecordingUpload,
+                            backendCode: backendData.accessCode,
+                            backendSessionId: backendData.sessionId,
+                        });
+                        await setDoc(attempt.ref, {
+                            simulation: {
+                                code: backendData.accessCode,
+                                backendSessionId: backendData.sessionId,
+                                crowdSize,
+                                audienceCount,
+                                ratios,
+                            },
+                            recordingUpload: backendRecordingUpload,
+                            updatedAt: serverTimestamp(),
+                        }, { merge: true });
+                        sessionStorage.setItem("simulationCode", backendData.accessCode);
+                        router.push(`/simulation/${backendData.accessCode}`);
+                        return;
+                    }
+                }
+            } catch (backendErr) {
+                console.warn("[PresentationDetail] 백엔드 연결 실패, Firestore-only 모드:", backendErr);
+            }
+
+            sessionStorage.setItem("simulationCode", code);
+            router.push(`/simulation/${code}`);
+        } catch (err) {
+            console.error("[PresentationDetail] 시뮬레이션 시작 실패:", err);
+            setModalError("시뮬레이션 시작 중 오류가 발생했습니다. 다시 시도해주세요.");
+            setStartingSimulation(false);
+        }
     };
 
     const handleDeleteAttempt = async (attempt) => {
@@ -326,28 +764,32 @@ export default function PresentationDetailPage({ params }) {
                         </div>
                     </div>
                     <div className="session-action-row">
-                        <button
-                            type="button"
-                            className="btn-danger"
-                            onClick={handleDeletePresentation}
-                            disabled={deletingPresentation}
-                        >
-                            {deletingPresentation ? "삭제 중..." : "발표 삭제"}
-                        </button>
-                        <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => router.push(`/upload?presentationId=${presentationId}`)}
-                        >
-                            영상 업로드
-                        </button>
-                        <button
-                            type="button"
-                            className="btn-primary"
-                            onClick={() => router.push(`/simulation/setup?presentationId=${presentationId}`)}
-                        >
-                            시뮬레이션
-                        </button>
+                        <div className="session-run-actions" aria-label="발표 진행 작업">
+                            <button
+                                type="button"
+                                className="session-upload-action"
+                                onClick={() => openModal("upload")}
+                            >
+                                영상 업로드
+                            </button>
+                            <button
+                                type="button"
+                                className="session-simulation-action"
+                                onClick={() => openModal("simulation")}
+                            >
+                                시뮬레이션
+                            </button>
+                        </div>
+                        <div className="session-danger-actions" aria-label="위험 작업">
+                            <button
+                                type="button"
+                                className="session-delete-action"
+                                onClick={handleDeletePresentation}
+                                disabled={deletingPresentation}
+                            >
+                                {deletingPresentation ? "삭제 중..." : "발표 삭제"}
+                            </button>
+                        </div>
                     </div>
                 </header>
 
@@ -368,31 +810,6 @@ export default function PresentationDetailPage({ params }) {
                         <span>최근 평균</span>
                         <strong>{formatScore(presentation.latestScoreAverage)}/5</strong>
                     </div>
-                </section>
-
-                <section className="session-panel">
-                    <div className="session-panel-header">
-                        <h2>세션 관리</h2>
-                        <span>{activeAttempts.length}개 진행 중 · {failedAttempts.length}개 확인 필요</span>
-                    </div>
-                    <div className="session-ops-grid">
-                        <div className="session-ops-item">
-                            <span>진행 중 회차</span>
-                            <strong>{activeAttempts.length}</strong>
-                            <p>시뮬레이션 연결 대기와 AI 분석 중인 회차입니다.</p>
-                        </div>
-                        <div className="session-ops-item">
-                            <span>정리 대상</span>
-                            <strong>{cleanupTargets.length}</strong>
-                            <p>{WAITING_CLEANUP_MINUTES}분 이상 대기 상태로 끝난 회차는 자동 삭제됩니다.</p>
-                        </div>
-                        <div className="session-ops-item">
-                            <span>실패 기록</span>
-                            <strong>{failedAttempts.length}</strong>
-                            <p>전송 실패나 분석 오류가 발생한 회차입니다.</p>
-                        </div>
-                    </div>
-                    {cleanupMessage && <p className="session-cleanup-note">{cleanupMessage}</p>}
                 </section>
 
                 <section className="session-panel">
@@ -492,6 +909,7 @@ export default function PresentationDetailPage({ params }) {
                         <h2>회차별 연습 기록</h2>
                         <span>{attempts.length}개 회차</span>
                     </div>
+                    {cleanupMessage && <p className="session-cleanup-note">{cleanupMessage}</p>}
 
                     {attempts.length === 0 ? (
                         <div className="attempt-empty">
@@ -539,6 +957,213 @@ export default function PresentationDetailPage({ params }) {
                     )}
                 </section>
             </div>
+
+            {activeModal === "upload" && (
+                <div className="next-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) closeModal();
+                }}>
+                    <section className="session-flow-modal" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+                        <header className="session-flow-modal-header">
+                            <div>
+                                <p>영상 업로드</p>
+                                <h2 id="upload-modal-title">분석할 발표 영상을 선택하세요</h2>
+                            </div>
+                            <button type="button" className="session-flow-close" onClick={closeModal} disabled={uploading} title="닫기" aria-label="닫기">×</button>
+                        </header>
+
+                        <div className="session-flow-body">
+                            {!videoFile ? (
+                                <div
+                                    className={`session-upload-dropzone ${dragActive ? "active" : ""}`}
+                                    onDragEnter={handleDrag}
+                                    onDragLeave={handleDrag}
+                                    onDragOver={handleDrag}
+                                    onDrop={handleDrop}
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="video/*"
+                                        onChange={handleFileChange}
+                                        hidden
+                                    />
+                                    <span className="session-upload-icon">↑</span>
+                                    <strong>파일 선택 또는 드래그</strong>
+                                    <p>MP4, MOV, AVI 등 발표 영상 파일을 사용할 수 있습니다.</p>
+                                </div>
+                            ) : (
+                                <div className="session-selected-file">
+                                    <div>
+                                        <strong>{videoFile.name}</strong>
+                                        <span>{formatFileSize(videoFile.size)}</span>
+                                    </div>
+                                    {!uploading && (
+                                        <button type="button" onClick={() => setVideoFile(null)}>다시 선택</button>
+                                    )}
+                                </div>
+                            )}
+
+                            {modalError && <p className="session-flow-error">{modalError}</p>}
+                            {uploading && <p className="session-flow-status">분석 준비 중...</p>}
+                        </div>
+
+                        <footer className="session-flow-actions">
+                            <button type="button" className="btn-secondary" onClick={closeModal} disabled={uploading}>취소</button>
+                            <button type="button" className="btn-primary" onClick={handleUploadVideo} disabled={!videoFile || uploading}>
+                                {uploading ? "준비 중..." : "분석 시작"}
+                            </button>
+                        </footer>
+                    </section>
+                </div>
+            )}
+
+            {activeModal === "simulation" && (
+                <div className="next-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) closeModal();
+                }}>
+                    <section className="session-flow-modal session-flow-modal-wide" role="dialog" aria-modal="true" aria-labelledby="simulation-modal-title">
+                        <header className="session-flow-modal-header">
+                            <div>
+                                <p>시뮬레이션 설정</p>
+                                <h2 id="simulation-modal-title">청중 규모와 분위기를 선택하세요</h2>
+                            </div>
+                            <button type="button" className="session-flow-close" onClick={closeModal} disabled={startingSimulation} title="닫기" aria-label="닫기">×</button>
+                        </header>
+
+                        <div className="session-flow-body">
+                            <div className="session-modal-section">
+                                <h3>청중 규모</h3>
+                                <div className="session-choice-row">
+                                    {CROWD_SIZE_OPTIONS.map((option) => (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            className={`session-choice ${crowdSize === option.id ? "selected" : ""}`}
+                                            onClick={() => setCrowdSize(option.id)}
+                                        >
+                                            <strong>{option.label}</strong>
+                                            <span>{option.desc}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="session-modal-section">
+                                <h3>청중 환경</h3>
+                                <p className="session-modal-help">발표 상황에 맞는 청중 구성을 선택하세요. 세부 비율은 직접 조정할 수도 있습니다.</p>
+                                <div className="session-preset-grid">
+                                    {AUDIENCE_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            className={`session-preset-card ${selectedPreset === preset.id ? "selected" : ""}`}
+                                            onClick={() => applyPreset(preset)}
+                                        >
+                                            <div>
+                                                <strong>{preset.label}</strong>
+                                                {selectedPreset === preset.id && <span>선택됨</span>}
+                                            </div>
+                                            <p>{preset.desc}</p>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div className="session-selected-ratio-panel">
+                                    <div className="session-selected-ratio-header">
+                                        <div>
+                                            <strong>{selectedAudienceDetail.label}</strong>
+                                            <span>{selectedAudienceDetail.desc}</span>
+                                        </div>
+                                        <b>{totalRatio}%</b>
+                                    </div>
+                                    <div className="session-ratio-bar">
+                                        {PERSONALITY_TYPES.map((type) => {
+                                            const value = selectedAudienceDetail.ratios[type.id] || 0;
+                                            if (!value) return null;
+                                            return <i key={type.id} style={{ flex: value, backgroundColor: type.color }} title={`${type.label} ${value}%`} />;
+                                        })}
+                                    </div>
+                                    <div className="session-ratio-list">
+                                        {PERSONALITY_TYPES.map((type) => {
+                                            const value = selectedAudienceDetail.ratios[type.id] || 0;
+                                            if (!value) return null;
+                                            return (
+                                                <span key={type.id}>
+                                                    <i style={{ backgroundColor: type.color }} />
+                                                    {type.label} {value}%
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="session-custom-toggle"
+                                    onClick={() => setShowCustomAudience((value) => !value)}
+                                >
+                                    {showCustomAudience ? "직접 설정 닫기" : "직접 설정 (비율 세부 조정)"}
+                                    {selectedPreset === "custom" && <span>사용자 정의</span>}
+                                </button>
+
+                                {showCustomAudience && (
+                                    <div className="session-custom-panel">
+                                        <p>슬라이더로 비율을 직접 조정합니다. 합계가 100%여야 시작할 수 있습니다.</p>
+                                        <div className="session-ratio-controls">
+                                            {PERSONALITY_TYPES.map((type) => (
+                                                <div key={type.id} className="session-ratio-control">
+                                                    <div className="session-ratio-label">
+                                                        <i style={{ backgroundColor: type.color }} />
+                                                        <div>
+                                                            <strong>{type.label}</strong>
+                                                            <span>{type.desc}</span>
+                                                        </div>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max="100"
+                                                        value={ratios[type.id]}
+                                                        onChange={(event) => handleRatioChange(type.id, event.target.value)}
+                                                        style={{ accentColor: type.color }}
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="100"
+                                                        value={ratios[type.id]}
+                                                        onChange={(event) => handleRatioChange(type.id, event.target.value)}
+                                                    />
+                                                    <span>%</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className={`session-ratio-total ${ratiosValid ? "valid" : "invalid"}`}>
+                                            <span>합계: <strong>{totalRatio}%</strong></span>
+                                            {!ratiosValid ? (
+                                                <button type="button" onClick={normalizeRatios}>100%로 자동 조정</button>
+                                            ) : (
+                                                <span>합계 100% 유효</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {modalError && <p className="session-flow-error">{modalError}</p>}
+                            {simulationStatus && <p className="session-flow-status">{simulationStatus}</p>}
+                        </div>
+
+                        <footer className="session-flow-actions">
+                            <button type="button" className="btn-secondary" onClick={closeModal} disabled={startingSimulation}>취소</button>
+                            <button type="button" className="btn-primary" onClick={handleStartSimulation} disabled={!crowdSize || !ratiosValid || startingSimulation}>
+                                {startingSimulation ? "준비 중..." : "시뮬레이션 시작"}
+                            </button>
+                        </footer>
+                    </section>
+                </div>
+            )}
             </main>
         </div>
     );
