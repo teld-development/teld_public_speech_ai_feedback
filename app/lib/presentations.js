@@ -93,6 +93,25 @@ export async function createPresentationSession(user, data) {
     return addDoc(collection(db, "users", user.uid, "presentations"), payload);
 }
 
+export async function updatePresentationSession(user, presentationId, data) {
+    if (!user?.uid) throw new Error("로그인이 필요합니다.");
+    if (!presentationId) throw new Error("발표 세션을 찾을 수 없습니다.");
+
+    const payload = {
+        title: data.title?.trim() || "발표",
+        topic: data.topic?.trim() || "",
+        audience: data.audience || "",
+        dday: data.dday || "",
+        duration: data.duration?.trim() || "",
+        presentationType: data.presentationType || "",
+        presentationMaterial: data.presentationMaterial || null,
+        updatedAt: serverTimestamp(),
+    };
+
+    const ref = doc(db, "users", user.uid, "presentations", presentationId);
+    await updateDoc(ref, payload);
+}
+
 export async function getPresentationSession(user, presentationId) {
     if (!user?.uid) throw new Error("로그인이 필요합니다.");
     const ref = doc(db, "users", user.uid, "presentations", presentationId);

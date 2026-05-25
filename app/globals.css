@@ -339,6 +339,12 @@
   font-weight: 850;
 }
 
+.presentation-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .presentation-score-row {
   border-top: 1px solid #f3f4f6;
   padding-top: 14px;
@@ -349,17 +355,28 @@
   font-size: 18px;
 }
 
+.presentation-edit-btn,
 .presentation-delete-btn {
-  align-self: flex-end;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: #dc2626;
   padding: 7px 10px;
   font-family: inherit;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
+}
+
+.presentation-edit-btn {
+  color: #2563eb;
+}
+
+.presentation-edit-btn:hover {
+  background: #eff6ff;
+}
+
+.presentation-delete-btn {
+  color: #dc2626;
 }
 
 .presentation-delete-btn:hover {
@@ -508,6 +525,7 @@
   padding-left: 12px;
 }
 
+.session-edit-action,
 .session-upload-action,
 .session-simulation-action,
 .session-delete-action {
@@ -522,6 +540,18 @@
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s, background 0.15s;
   white-space: nowrap;
+}
+
+.session-edit-action {
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: #ffffff;
+  color: #334155;
+}
+
+.session-edit-action:hover {
+  border-color: rgba(37, 99, 235, 0.38);
+  background: #f8fbff;
+  color: #1d4ed8;
 }
 
 .session-upload-action {
@@ -577,6 +607,10 @@
 
 .session-flow-modal-wide {
   width: min(900px, calc(100vw - 32px));
+}
+
+.session-edit-modal {
+  width: min(720px, calc(100vw - 32px));
 }
 
 .session-flow-modal-header {
@@ -1052,6 +1086,16 @@
   flex: 0 0 auto;
 }
 
+.session-flow-body .presentation-session-form-section {
+  margin-bottom: 0;
+  border-color: rgba(226, 232, 240, 0.9);
+  box-shadow: none;
+}
+
+.session-flow-body .presentation-session-form-actions {
+  margin-top: 16px;
+}
+
 .session-panel {
   margin-bottom: 18px;
 }
@@ -1440,6 +1484,7 @@
     padding-top: 10px;
   }
 
+  .session-edit-action,
   .session-upload-action,
   .session-simulation-action,
   .session-delete-action {

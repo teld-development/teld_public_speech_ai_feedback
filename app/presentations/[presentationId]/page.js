@@ -8,6 +8,7 @@ import { auth, db } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
 import { convertAndUploadPdfFromUrl } from "../../lib/pdfToImages";
+import PresentationSessionForm from "../../components/PresentationSessionForm";
 import {
     buildRecordingUpload,
     createPresentationAttempt,
@@ -767,6 +768,13 @@ export default function PresentationDetailPage({ params }) {
                         <div className="session-run-actions" aria-label="발표 진행 작업">
                             <button
                                 type="button"
+                                className="session-edit-action"
+                                onClick={() => openModal("edit")}
+                            >
+                                정보 수정
+                            </button>
+                            <button
+                                type="button"
                                 className="session-upload-action"
                                 onClick={() => openModal("upload")}
                             >
@@ -1014,6 +1022,33 @@ export default function PresentationDetailPage({ params }) {
                                 {uploading ? "준비 중..." : "분석 시작"}
                             </button>
                         </footer>
+                    </section>
+                </div>
+            )}
+
+            {activeModal === "edit" && (
+                <div className="next-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) closeModal();
+                }}>
+                    <section className="session-flow-modal session-edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+                        <header className="session-flow-modal-header">
+                            <div>
+                                <p>발표 정보 수정</p>
+                                <h2 id="edit-modal-title">발표 세션 정보를 수정하세요</h2>
+                            </div>
+                            <button type="button" className="session-flow-close" onClick={closeModal} title="닫기" aria-label="닫기">×</button>
+                        </header>
+
+                        <div className="session-flow-body">
+                            <PresentationSessionForm
+                                user={user}
+                                mode="edit"
+                                presentation={presentation}
+                                formId={`detail-edit-${presentation.id}`}
+                                onCancel={closeModal}
+                                onSaved={closeModal}
+                            />
+                        </div>
                     </section>
                 </div>
             )}

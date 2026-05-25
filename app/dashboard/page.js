@@ -7,6 +7,7 @@ import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { useAuth } from "../lib/AuthProvider";
 import { deletePresentationSession } from "../lib/presentations";
+import PresentationSessionForm from "../components/PresentationSessionForm";
 
 function formatDate(value) {
     if (!value) return "미정";
@@ -43,6 +44,7 @@ export default function DashboardPage() {
     const [presentations, setPresentations] = useState([]);
     const [loadingPresentations, setLoadingPresentations] = useState(true);
     const [deletingPresentationId, setDeletingPresentationId] = useState("");
+    const [sessionModal, setSessionModal] = useState(null);
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -87,6 +89,21 @@ export default function DashboardPage() {
 
     const openPresentation = (presentationId) => {
         router.push(`/presentations/${presentationId}`);
+    };
+
+    const openCreateModal = () => {
+        setError("");
+        setSessionModal({ mode: "create", presentation: null });
+    };
+
+    const openEditModal = (event, presentation) => {
+        event.stopPropagation();
+        setError("");
+        setSessionModal({ mode: "edit", presentation });
+    };
+
+    const closeSessionModal = () => {
+        setSessionModal(null);
     };
 
     const handleDeletePresentation = async (event, presentation) => {
@@ -143,10 +160,10 @@ export default function DashboardPage() {
                     <section className="dashboard-hero" aria-label="AI 발표 피드백 대시보드">
                         <img src="/images/dashboard-banner.png" alt="" />
                         <div className="dashboard-hero-content">
-                                                        <p className="session-eyebrow">연습하기</p>
+                            <p className="session-eyebrow">연습하기</p>
                             <h1>발표를 준비하세요</h1>
                             <p>예정된 발표 날짜를 정하고, 그 날짜까지 AI와 함께 실력을 향상시켜보세요!</p>
-                            <button type="button" className="btn-primary dashboard-hero-action" onClick={() => router.push("/presentations/new")}>
+                            <button type="button" className="btn-primary dashboard-hero-action" onClick={openCreateModal}>
                                 발표 추가
                             </button>
                         </div>
@@ -185,6 +202,7 @@ export default function DashboardPage() {
                                     className="presentation-card"
                                     onClick={() => openPresentation(presentation.id)}
                                     onKeyDown={(event) => {
+                                        if (event.target !== event.currentTarget) return;
                                         if (event.key === "Enter" || event.key === " ") {
                                             event.preventDefault();
                                             openPresentation(presentation.id);
@@ -204,20 +222,62 @@ export default function DashboardPage() {
                                         <span>{presentation.audience || "청중 미정"}</span>
                                         <span className="presentation-open-label">세션 열기</span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        className="presentation-delete-btn"
-                                        onClick={(event) => handleDeletePresentation(event, presentation)}
-                                        disabled={deletingPresentationId === presentation.id}
-                                    >
-                                        {deletingPresentationId === presentation.id ? "삭제 중" : "삭제"}
-                                    </button>
+                                    <div className="presentation-card-actions">
+                                        <button
+                                            type="button"
+                                            className="presentation-edit-btn"
+                                            onClick={(event) => openEditModal(event, presentation)}
+                                        >
+                                            수정
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="presentation-delete-btn"
+                                            onClick={(event) => handleDeletePresentation(event, presentation)}
+                                            disabled={deletingPresentationId === presentation.id}
+                                        >
+                                            {deletingPresentationId === presentation.id ? "삭제 중" : "삭제"}
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </section>
                     )}
                 </div>
             </main>
+
+            {sessionModal && (
+                <div className="next-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) closeSessionModal();
+                }}>
+                    <section className="session-flow-modal session-edit-modal" role="dialog" aria-modal="true" aria-labelledby="presentation-session-modal-title">
+                        <header className="session-flow-modal-header">
+                            <div>
+                                <p>{sessionModal.mode === "edit" ? "발표 정보 수정" : "발표 추가"}</p>
+                                <h2 id="presentation-session-modal-title">
+                                    {sessionModal.mode === "edit" ? "발표 세션 정보를 수정하세요" : "새 발표 세션을 추가하세요"}
+                                </h2>
+                            </div>
+                            <button type="button" className="session-flow-close" onClick={closeSessionModal} title="닫기" aria-label="닫기">×</button>
+                        </header>
+                        <div className="session-flow-body">
+                            <PresentationSessionForm
+                                user={user}
+                                mode={sessionModal.mode}
+                                presentation={sessionModal.presentation}
+                                formId={`dashboard-${sessionModal.mode}-${sessionModal.presentation?.id || "new"}`}
+                                onCancel={closeSessionModal}
+                                onSaved={(savedPresentation) => {
+                                    closeSessionModal();
+                                    if (sessionModal.mode === "create") {
+                                        router.push(`/presentations/${savedPresentation.id}`);
+                                    }
+                                }}
+                            />
+                        </div>
+                    </section>
+                </div>
+            )}
         </div>
     );
 }
