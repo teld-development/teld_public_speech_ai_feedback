@@ -77,9 +77,22 @@ export default function LoadingPage() {
 
         const startAnalysis = async () => {
             let activeAttempt = null;
+            let usedPendingAnalysis = false;
             try {
-                // IndexedDB에서 비디오 데이터 가져오기
-                const videoData = await getVideoDB("pendingVideo");
+                const pendingAnalysisRaw = sessionStorage.getItem("pendingAnalysis");
+                let pendingAnalysis = null;
+                if (pendingAnalysisRaw) {
+                    try {
+                        pendingAnalysis = JSON.parse(pendingAnalysisRaw);
+                        usedPendingAnalysis = true;
+                    } catch (parseErr) {
+                        console.warn("[Loading] pendingAnalysis 파싱 실패:", parseErr);
+                        sessionStorage.removeItem("pendingAnalysis");
+                    }
+                }
+
+                // IndexedDB 또는 사전 업로드된 영상 데이터 가져오기
+                const videoData = pendingAnalysis || await getVideoDB("pendingVideo");
 
                 if (!videoData) {
                     setError("분석할 데이터가 없습니다. 영상을 다시 업로드해주세요.");
@@ -87,22 +100,26 @@ export default function LoadingPage() {
                     return;
                 }
 
-                const { buffer, name, type, prepareData, presentationId, attemptId, recordingUpload } = videoData;
+                const { buffer, name, type, prepareData, presentationId, attemptId, recordingUpload, blobResult: preuploadedBlobResult } = videoData;
                 activeAttempt = { presentationId, attemptId };
 
                 // ArrayBuffer를 Blob으로 변환
-                const blob = new Blob([buffer], { type });
-                const file = new File([blob], name, { type });
+                const blob = buffer ? new Blob([buffer], { type }) : null;
+                const file = blob ? new File([blob], name, { type }) : null;
 
                 // ===== Step 1: API 경유 서버 업로드 (CORS 우회) =====
                 setCurrentStep(0);
                 setProgress(5);
 
-                console.log("[Loading] 서버 경유 업로드 시작...");
+                console.log(preuploadedBlobResult?.url ? "[Loading] 사전 업로드된 영상 사용" : "[Loading] 서버 경유 업로드 시작...");
 
-                let blobResult;
+                let blobResult = preuploadedBlobResult || null;
                 try {
-                    if (recordingUpload?.rawVideoPath) {
+                    if (blobResult?.url) {
+                        setUploadProgress(100);
+                        setProgress(30);
+                    } else if (recordingUpload?.rawVideoPath) {
+                        if (!file) throw new Error("업로드할 영상 파일을 찾을 수 없습니다.");
                         blobResult = await new Promise((resolve, reject) => {
                             const ref = storageRef(storage, recordingUpload.rawVideoPath);
                             const task = uploadBytesResumable(ref, file, {
@@ -135,6 +152,7 @@ export default function LoadingPage() {
                             );
                         });
                     } else {
+                        if (!file) throw new Error("업로드할 영상 파일을 찾을 수 없습니다.");
                         blobResult = await new Promise((resolve, reject) => {
                             const xhr = new XMLHttpRequest();
                             xhr.open('POST', `/api/upload-blob?filename=${encodeURIComponent(file.name)}`);
@@ -165,7 +183,7 @@ export default function LoadingPage() {
                 }
 
                 console.log("[Loading] 업로드 완료:", blobResult.url);
-                if (presentationId && attemptId) {
+                if (!preuploadedBlobResult?.url && presentationId && attemptId) {
                     await markAttemptAnalyzing(user, presentationId, attemptId, {
                         video: {
                             videoUrl: blobResult.url,
@@ -272,13 +290,17 @@ export default function LoadingPage() {
                 // 결과 저장
                 sessionStorage.setItem("analysisResult", JSON.stringify(analysisResult));
 
-                // 비디오 URL 저장 (재생용) - 로컬 blob URL 사용
-                const videoUrl = URL.createObjectURL(blob);
+                // 비디오 URL 저장 (재생용)
+                const videoUrl = blob ? URL.createObjectURL(blob) : blobResult.url;
                 sessionStorage.setItem("videoUrl", videoUrl);
                 sessionStorage.setItem("videoName", name);
 
-                // IndexedDB 정리
-                await deleteVideoDB("pendingVideo");
+                // 임시 데이터 정리
+                if (usedPendingAnalysis) {
+                    sessionStorage.removeItem("pendingAnalysis");
+                } else {
+                    await deleteVideoDB("pendingVideo");
+                }
 
                 setProgress(100);
 
@@ -299,6 +321,9 @@ export default function LoadingPage() {
                     } catch (failErr) {
                         console.error("[Loading] 회차 실패 상태 저장 실패:", failErr);
                     }
+                }
+                if (usedPendingAnalysis) {
+                    sessionStorage.removeItem("pendingAnalysis");
                 }
                 setError(err.message || "영상 분석 중 오류가 발생했습니다.");
                 clearInterval(timer);

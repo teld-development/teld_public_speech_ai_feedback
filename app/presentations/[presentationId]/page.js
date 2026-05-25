@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from "firebase/firestore";
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
 import { auth, db } from "../../lib/firebase";
+import { storage } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
 import { convertAndUploadPdfFromUrl } from "../../lib/pdfToImages";
@@ -14,12 +16,11 @@ import {
     createPresentationAttempt,
     deletePresentationAttempt,
     deletePresentationSession,
+    failPresentationAttempt,
+    markAttemptAnalyzing,
 } from "../../lib/presentations";
 
 const WAITING_CLEANUP_MINUTES = 30;
-const DB_NAME = "VideoAnalysisDB";
-const STORE_NAME = "pendingVideos";
-
 const CROWD_SIZE_OPTIONS = [
     { id: "small", label: "소집단", desc: "5명", count: 5 },
     { id: "medium", label: "중집단", desc: "10명", count: 10 },
@@ -77,29 +78,6 @@ const AUDIENCE_PRESETS = [
 
 const generateSimulationCode = () =>
     String(Math.floor(100000 + Math.random() * 900000));
-
-const openDB = () => new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
-        const dbInstance = event.target.result;
-        if (!dbInstance.objectStoreNames.contains(STORE_NAME)) {
-            dbInstance.createObjectStore(STORE_NAME);
-        }
-    };
-});
-
-const saveVideoDB = async (key, data) => {
-    const dbInstance = await openDB();
-    return new Promise((resolve, reject) => {
-        const transaction = dbInstance.transaction(STORE_NAME, "readwrite");
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(data, key);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve();
-    });
-};
 
 const ATTEMPT_STATUS_META = {
     pending: { label: "준비 중", tone: "muted" },
@@ -266,6 +244,7 @@ export default function PresentationDetailPage({ params }) {
     const [videoFile, setVideoFile] = useState(null);
     const [dragActive, setDragActive] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
     const [modalError, setModalError] = useState("");
     const [crowdSize, setCrowdSize] = useState("medium");
     const [ratios, setRatios] = useState(AUDIENCE_PRESETS[1].ratios);
@@ -394,6 +373,7 @@ export default function PresentationDetailPage({ params }) {
         setActiveModal("");
         setVideoFile(null);
         setDragActive(false);
+        setUploadProgress(0);
         setModalError("");
         setSimulationStatus("");
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -402,6 +382,7 @@ export default function PresentationDetailPage({ params }) {
     const openModal = (mode) => {
         setModalError("");
         setSimulationStatus("");
+        setUploadProgress(0);
         setActiveModal(mode);
     };
 
@@ -439,10 +420,14 @@ export default function PresentationDetailPage({ params }) {
     const handleUploadVideo = async () => {
         if (!videoFile || !user || !presentation) return;
         setUploading(true);
+        setUploadProgress(0);
         setModalError("");
 
+        let attempt = null;
+        let uploadedStoragePath = null;
+
         try {
-            const attempt = await createPresentationAttempt(user, presentationId, "upload");
+            attempt = await createPresentationAttempt(user, presentationId, "upload");
             const recordingUpload = buildRecordingUpload({
                 ownerUid: user.uid,
                 presentationId,
@@ -451,12 +436,56 @@ export default function PresentationDetailPage({ params }) {
                 fileName: videoFile.name || `upload_${attempt.id}.mp4`,
                 mimeType: videoFile.type || "video/mp4",
             });
-            const arrayBuffer = await videoFile.arrayBuffer();
 
-            await saveVideoDB("pendingVideo", {
-                buffer: arrayBuffer,
+            const uploadResult = await new Promise((resolve, reject) => {
+                const ref = storageRef(storage, recordingUpload.rawVideoPath);
+                uploadedStoragePath = recordingUpload.rawVideoPath;
+                const task = uploadBytesResumable(ref, videoFile, {
+                    contentType: videoFile.type || recordingUpload.mimeType || "video/mp4",
+                    customMetadata: {
+                        ownerUid: user.uid,
+                        presentationId,
+                        attemptId: attempt.id,
+                        sourceType: "upload",
+                    },
+                });
+
+                task.on(
+                    "state_changed",
+                    (snapshot) => {
+                        const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                        setUploadProgress(pct);
+                    },
+                    reject,
+                    async () => {
+                        try {
+                            const url = await getDownloadURL(task.snapshot.ref);
+                            resolve({
+                                url,
+                                storagePath: recordingUpload.rawVideoPath,
+                                fileName: recordingUpload.fileName || videoFile.name,
+                                mimeType: videoFile.type || recordingUpload.mimeType || "video/mp4",
+                            });
+                        } catch (downloadUrlErr) {
+                            reject(downloadUrlErr);
+                        }
+                    }
+                );
+            });
+
+            await markAttemptAnalyzing(user, presentationId, attempt.id, {
+                video: {
+                    videoUrl: uploadResult.url,
+                    storagePath: uploadResult.storagePath,
+                    fileName: uploadResult.fileName,
+                    mimeType: uploadResult.mimeType,
+                },
+            });
+
+            sessionStorage.setItem("pendingAnalysis", JSON.stringify({
+                blobResult: uploadResult,
                 name: videoFile.name,
-                type: videoFile.type,
+                type: videoFile.type || "video/mp4",
                 presentationId,
                 attemptId: attempt.id,
                 attemptNo: attempt.attemptNo,
@@ -476,13 +505,38 @@ export default function PresentationDetailPage({ params }) {
                     ownerEmail: user.email || "",
                     presentationMaterial: presentation.presentationMaterial || null,
                 },
-            });
+            }));
 
             router.push("/loading");
         } catch (err) {
             console.error("[PresentationDetail] 영상 업로드 준비 실패:", err);
-            setModalError(err.message || "영상 준비 중 오류가 발생했습니다.");
+            if (uploadedStoragePath) {
+                try {
+                    await deleteObject(storageRef(storage, uploadedStoragePath));
+                } catch (cleanupErr) {
+                    console.warn("[PresentationDetail] 실패한 업로드 파일 정리 실패:", cleanupErr);
+                }
+            }
+            if (attempt?.id) {
+                try {
+                    await deletePresentationAttempt(user, presentationId, attempt.id);
+                } catch (cleanupErr) {
+                    console.warn("[PresentationDetail] 실패한 업로드 회차 삭제 실패:", cleanupErr);
+                    try {
+                        await failPresentationAttempt(
+                            user,
+                            presentationId,
+                            attempt.id,
+                            err.message || "영상 업로드 중 오류가 발생했습니다."
+                        );
+                    } catch (failErr) {
+                        console.warn("[PresentationDetail] 실패한 업로드 회차 상태 저장 실패:", failErr);
+                    }
+                }
+            }
+            setModalError(err.message || "영상 업로드 중 오류가 발생했습니다.");
             setUploading(false);
+            setUploadProgress(0);
         }
     };
 
@@ -1013,13 +1067,13 @@ export default function PresentationDetailPage({ params }) {
                             )}
 
                             {modalError && <p className="session-flow-error">{modalError}</p>}
-                            {uploading && <p className="session-flow-status">분석 준비 중...</p>}
+                            {uploading && <p className="session-flow-status">영상 업로드 중... {uploadProgress}%</p>}
                         </div>
 
                         <footer className="session-flow-actions">
                             <button type="button" className="btn-secondary" onClick={closeModal} disabled={uploading}>취소</button>
                             <button type="button" className="btn-primary" onClick={handleUploadVideo} disabled={!videoFile || uploading}>
-                                {uploading ? "준비 중..." : "분석 시작"}
+                                {uploading ? `업로드 중 ${uploadProgress}%` : "분석 시작"}
                             </button>
                         </footer>
                     </section>
