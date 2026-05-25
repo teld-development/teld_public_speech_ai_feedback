@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";
 import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { auth, db } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
 import { deletePresentationAttempt, deletePresentationSession } from "../../lib/presentations";
@@ -123,6 +124,7 @@ export default function PresentationDetailPage({ params }) {
     const router = useRouter();
     const { presentationId } = params;
     const { user, authLoading } = useAuth();
+    const [accountMenuOpen, setAccountMenuOpen] = useState(false);
     const [presentation, setPresentation] = useState(null);
     const [attempts, setAttempts] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -232,6 +234,11 @@ export default function PresentationDetailPage({ params }) {
         router.push("/analysis");
     };
 
+    const handleLogout = async () => {
+        await signOut(auth);
+        router.replace("/");
+    };
+
     const handleDeleteAttempt = async (attempt) => {
         if (!confirm(`${attempt.attemptNo}회차 기록을 삭제하시겠습니까?`)) return;
         try {
@@ -278,45 +285,69 @@ export default function PresentationDetailPage({ params }) {
     }
 
     return (
-        <main className="session-detail-page">
+        <div className="db-layout">
+            <header className="db-topbar">
+                <div className="db-topbar-brand">
+                    <img src="/logo.png" alt="Logo" className="db-topbar-logo" />
+                    <span className="db-topbar-title">AI 발표 피드백 시스템</span>
+                </div>
+                <div className="db-topbar-right">
+                    <button
+                        className="db-account-btn"
+                        onClick={() => setAccountMenuOpen(!accountMenuOpen)}
+                    >
+                        {user.email || "내 계정"}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M6 9l6 6 6-6" />
+                        </svg>
+                    </button>
+                    {accountMenuOpen && (
+                        <div className="db-account-menu">
+                            <button onClick={handleLogout}>로그아웃</button>
+                        </div>
+                    )}
+                </div>
+            </header>
+
+            <main className="session-detail-page">
             <div className="session-detail-container">
-                <header className="session-detail-header">
-                    <button type="button" className="sim-setup-back" onClick={() => router.push("/dashboard")}>
+                <header className="session-detail-toolbar">
+                    <button type="button" className="session-toolbar-back" onClick={() => router.push("/dashboard")}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M19 12H5" /><polyline points="12 19 5 12 12 5" />
                         </svg>
                         대시보드
                     </button>
-                    <div className="session-detail-title-row">
+                    <div className="session-toolbar-title">
+                        <span className="presentation-dday">{ddayText(presentation.dday)}</span>
                         <div>
-                            <span className="presentation-dday">{ddayText(presentation.dday)}</span>
                             <h1>{presentation.title || "발표"}</h1>
                             <p>{presentation.topic || "주제 미입력"}</p>
                         </div>
-                        <div className="session-action-row">
-                            <button
-                                type="button"
-                                className="btn-danger"
-                                onClick={handleDeletePresentation}
-                                disabled={deletingPresentation}
-                            >
-                                {deletingPresentation ? "삭제 중..." : "발표 삭제"}
-                            </button>
-                            <button
-                                type="button"
-                                className="btn-secondary"
-                                onClick={() => router.push(`/upload?presentationId=${presentationId}`)}
-                            >
-                                영상 업로드
-                            </button>
-                            <button
-                                type="button"
-                                className="btn-primary"
-                                onClick={() => router.push(`/simulation/setup?presentationId=${presentationId}`)}
-                            >
-                                시뮬레이션
-                            </button>
-                        </div>
+                    </div>
+                    <div className="session-action-row">
+                        <button
+                            type="button"
+                            className="btn-danger"
+                            onClick={handleDeletePresentation}
+                            disabled={deletingPresentation}
+                        >
+                            {deletingPresentation ? "삭제 중..." : "발표 삭제"}
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => router.push(`/upload?presentationId=${presentationId}`)}
+                        >
+                            영상 업로드
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() => router.push(`/simulation/setup?presentationId=${presentationId}`)}
+                        >
+                            시뮬레이션
+                        </button>
                     </div>
                 </header>
 
@@ -508,6 +539,7 @@ export default function PresentationDetailPage({ params }) {
                     )}
                 </section>
             </div>
-        </main>
+            </main>
+        </div>
     );
 }
