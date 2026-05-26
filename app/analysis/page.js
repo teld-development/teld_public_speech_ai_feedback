@@ -433,8 +433,8 @@ export default function AnalysisPage() {
                             <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("이번 발표에서 가장 개선되어야 할 부분이 뭘까?")}>
                                 이번 발표에서 가장 개선되어야 할 부분이 뭘까?
                             </button>
-                            <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("시선 처리와 제스처를 더 잘하려면 어떻게 해야 할까?")}>
-                                시선 처리와 제스처를 더 잘하려면 어떻게 해야 할까?
+                            <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("내용 조직과 표현 전달을 더 잘하려면 어떻게 해야 할까?")}>
+                                내용 조직과 표현 전달을 더 잘하려면 어떻게 해야 할까?
                             </button>
                             <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("다음 발표에서 바로 적용할 수 있는 팁을 알려줘")}>
                                 다음 발표에서 바로 적용할 수 있는 팁을 알려줘

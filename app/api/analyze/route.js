@@ -49,7 +49,7 @@ async function waitForActiveFile(fileManager, fileName, { maxWaitMs, label }) {
 async function analyzeCategory(model, fileUri, fileMimeType, category, { topic, audience, duration }) {
     // 항목별 id를 프롬프트에 명시해 모델이 scores 키로 직접 사용하게 함
     const rubric = category.items
-        .map((it) => `   - ${it.label}: ${it.desc}`)
+        .map((it) => `   - [${it.id}] ${it.label}: ${it.desc}`)
         .join("\n");
     const itemLabels = category.items.map((it) => it.label).join(", ");
     const scoreKeys = category.items.map((it) => `"${it.id}": 1~5 사이 정수`).join(", ");
@@ -87,7 +87,7 @@ ${rubric}
 1. 이 영역의 항목(${itemLabels})에 대해서만 분석하세요.
 2. timestamps는 영상 전체에서 ${minTs}~${maxTs}개를 고르게 선정하세요. 각 평가 항목마다 최소 1개 이상 포함하세요.
 3. item 값은 위 항목명을 철자·공백·부호까지 완전히 동일하게 사용하세요. 영어나 약어를 사용하지 마세요.
-4. scores는 각 항목의 발표 전반에 걸친 수행 수준을 1(매우 미흡)~5(매우 우수) 정수로 평가하세요.
+4. scores의 키는 반드시 위 대괄호 안의 id를 그대로 사용하고, 값은 1(매우 미흡)~5(매우 우수) 정수로 평가하세요.
 5. 구체적이고 건설적인 피드백을 작성하세요.
 6. 한국어로 응답하세요.`;
 
@@ -112,6 +112,14 @@ ${rubric}
 // ── 종합 요약 분석 ─────────────────────────────────────────────────────────────
 async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { topic, audience, duration }) {
     const categoryLabels = activeCategories.map((c) => `${c.icon} ${c.label}`).join(", ");
+    const rubric = activeCategories
+        .map((category) => {
+            const items = category.items
+                .map((item) => `  - [${item.id}] ${item.label}: ${item.desc}`)
+                .join("\n");
+            return `${category.label}\n${items}`;
+        })
+        .join("\n\n");
 
     const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
 발표 영상 전체를 종합 평가하고 요약 피드백을 제공해주세요.
@@ -122,6 +130,9 @@ async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { 
 - 발표 시간: ${duration || "미지정"}
 - 평가 영역: ${categoryLabels}
 
+평가 기준:
+${rubric}
+
 다음 JSON 형식으로만 응답하세요 (순수 JSON):
 {
   "summary": {
@@ -131,7 +142,10 @@ async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { 
   }
 }
 
-한국어로 응답하세요.`;
+주의사항:
+1. 위 평가 기준의 내용, 조직, 표현 영역을 모두 고려하세요.
+2. strengths와 suggestions는 가능하면 특정 하위 영역명을 언급해 작성하세요.
+3. 한국어로 응답하세요.`;
 
     const message = new HumanMessage({
         content: [

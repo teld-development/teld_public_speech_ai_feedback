@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ALL_ITEM_IDS, FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
 
 const PROFILES = {
     short: {
@@ -18,8 +19,7 @@ const PROFILES = {
             feedbackText: "전반적으로 차분하고 안정적인 발표였습니다. 청중과의 시선 교환이 좋았으며, 슬라이드 전환도 매끄러웠습니다. 다만 음성의 톤 변화가 다소 단조로워 청중의 집중을 유지하기 어려운 구간이 있었습니다.",
             refinedTranscript: "안녕하세요. 오늘은 인공지능의 미래에 대해 발표하겠습니다.",
             pscrScoresJson: JSON.stringify({
-                speed: 70, volume: 80, language: 75, gesture: 85, eye: 80,
-                expression: 70, posture: 75, preparation: 90, clarity: 75, reaction: 65
+                content: 76, organization: 74, expression: 78,
             }),
             logsJson: JSON.stringify([
                 { text: "안녕하세요, 발표를 시작하겠습니다.", durationSec: 6, speedStatus: "보통", volumeRatio: 1.0, silenceDuration: 1 },
@@ -56,8 +56,7 @@ const PROFILES = {
 종합적으로 이번 발표는 80점 이상의 우수한 수준이며, 위에서 언급한 부분들을 보완한다면 더욱 완성도 높은 발표가 가능할 것으로 기대됩니다. 다음 발표에서는 특히 톤 조절과 청중 반응에 대한 즉각적 대응 능력을 길러보시기 바랍니다.`,
             refinedTranscript: "안녕하세요. 오늘 발표할 주제는 인공지능과 미래 사회입니다. 본 발표에서는 다음 세 가지를 중심으로 살펴보겠습니다...",
             pscrScoresJson: JSON.stringify({
-                speed: 75, volume: 80, language: 78, gesture: 82, eye: 88,
-                expression: 75, posture: 80, preparation: 85, clarity: 82, reaction: 70
+                content: 82, organization: 80, expression: 83,
             }),
             logsJson: JSON.stringify([
                 { text: "안녕하세요, 오늘 발표를 시작하겠습니다.", durationSec: 6, speedStatus: "보통", volumeRatio: 1.0 },
@@ -132,14 +131,44 @@ export default function AnalysisTestPage() {
     const handleStart = (key) => {
         const profile = PROFILES[key];
         if (!profile) return;
-        sessionStorage.setItem("analysisResult", JSON.stringify(profile.data));
+        const scores = ALL_ITEM_IDS.reduce((acc, itemId, index) => {
+            acc[itemId] = 3 + (index % 3);
+            return acc;
+        }, {});
+        const timestamps = FEEDBACK_CATEGORIES.flatMap((category, categoryIndex) =>
+            category.items.slice(0, 3).map((item, itemIndex) => {
+                const seconds = 20 + categoryIndex * 80 + itemIndex * 24;
+                return {
+                    time: `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`,
+                    seconds,
+                    category: category.label,
+                    item: item.label,
+                    feedback: `${item.label}과 관련해 ${item.desc} 현재 발표에서는 대체로 안정적이지만, 다음 연습에서 더 명확하게 드러내면 좋습니다.`,
+                };
+            })
+        );
+        sessionStorage.setItem("analysisResult", JSON.stringify({
+            ...profile.data,
+            timestamps,
+            scores,
+            summary: {
+                overall: "테스트 발표는 내용, 조직, 표현의 세 영역이 전반적으로 균형 있게 구성되었습니다. 주제와 청중을 고려한 설명은 안정적이었고, 발표 흐름도 비교적 분명했습니다. 다만 결론의 마무리와 핵심 문장의 음성 강조를 더 선명하게 만들면 전달력이 높아질 수 있습니다.",
+                strengths: [
+                    "주제와 청중을 고려한 설명 방식이 안정적입니다.",
+                    "도입과 본론의 흐름이 비교적 자연스럽습니다.",
+                    "태도와 매체 활용이 발표 상황에 잘 맞습니다.",
+                ],
+                suggestions: [
+                    "결론에서 핵심 논지를 한 문장으로 다시 정리해보세요.",
+                    "내용 전환부마다 연결 표현을 넣어 흐름을 강화해보세요.",
+                    "중요 문장은 속도와 강세를 조절해 강조해보세요.",
+                ],
+            },
+        }));
         sessionStorage.setItem("videoName", `테스트: ${profile.label}`);
         sessionStorage.setItem("prepareData", JSON.stringify({
             topic: "테스트 발표",
-            feedbackItems: ["eye_contact", "gesture", "facial_expression", "prosody",
-                "language_choice", "audience_adaptation", "media_interaction",
-                "verbal_nonverbal_sync", "audience_awareness", "no_distraction",
-                "facing", "professional_appearance"],
+            feedbackItems: ALL_ITEM_IDS,
         }));
         router.push("/analysis");
     };

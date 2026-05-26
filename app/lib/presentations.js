@@ -11,7 +11,7 @@ import {
     writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { FEEDBACK_CATEGORIES } from "./feedbackAreas";
+import { FEEDBACK_CATEGORIES, buildEmptyCategoryAverages } from "./feedbackAreas";
 
 export const RECORDINGS_BUCKET = "public-speech-feedback.firebasestorage.app";
 
@@ -79,11 +79,7 @@ export async function createPresentationSession(user, data) {
         attemptCount: 0,
         latestAttemptId: null,
         latestScoreAverage: null,
-        categoryAverages: {
-            visual: null,
-            verbal: null,
-            media: null,
-        },
+        categoryAverages: buildEmptyCategoryAverages(),
         ownerUid: user.uid,
         ownerEmail: user.email || "",
         createdAt: serverTimestamp(),
@@ -136,11 +132,7 @@ export async function createPresentationAttempt(user, presentationId, sourceType
             sourceType,
             status: "pending",
             scoreAverage: null,
-            categoryAverages: {
-                visual: null,
-                verbal: null,
-                media: null,
-            },
+            categoryAverages: buildEmptyCategoryAverages(),
             analysisResult: null,
             video: null,
             createdAt: serverTimestamp(),
@@ -221,11 +213,7 @@ export async function normalizePresentationAttempts(user, presentationId) {
         attemptCount: attempts.length,
         latestAttemptId: latestCompleted?.id || null,
         latestScoreAverage: latestCompleted?.scoreAverage ?? null,
-        categoryAverages: latestCompleted?.categoryAverages || {
-            visual: null,
-            verbal: null,
-            media: null,
-        },
+        categoryAverages: latestCompleted?.categoryAverages || buildEmptyCategoryAverages(),
         updatedAt: serverTimestamp(),
     });
 

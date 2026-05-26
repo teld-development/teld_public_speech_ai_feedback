@@ -5,129 +5,79 @@ import { useRouter } from "next/navigation";
 import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
 
 const DUMMY_FEEDBACK = {
+    topic_relevance: {
+        score: 4,
+        summary: "발표 주제가 청중의 관심과 발표 상황에 잘 맞아 도입부터 목적이 분명하게 전달되었습니다.",
+        evidence: [
+            "도입부에서 발표 주제를 청중의 실제 상황과 연결해 관심을 유도했습니다.",
+            "주제 범위가 지나치게 넓지 않아 제한된 시간 안에서 다루기 적절했습니다.",
+        ],
+        suggestion: "도입 마지막에 발표를 통해 청중이 얻을 수 있는 핵심 가치를 한 문장으로 제시해보세요.",
+    },
+    organization_flow: {
+        score: 4,
+        summary: "내용 간 연결이 비교적 자연스럽고, 발표자가 의도한 설명 순서가 명확하게 드러났습니다.",
+        evidence: [
+            "본론의 주요 항목을 순서대로 제시해 청중이 흐름을 따라가기 쉬웠습니다.",
+            "일부 전환부에서는 앞 내용과 다음 내용의 관계를 더 명확히 설명할 여지가 있었습니다.",
+        ],
+        suggestion: "새 소주제로 넘어갈 때 '이제 원인에서 해결 방안으로 넘어가겠습니다'처럼 연결 문장을 넣어보세요.",
+    },
+    vocal_expression: {
+        score: 3,
+        summary: "발음과 속도는 안정적이지만, 핵심 문장에서 억양과 강세 변화가 더 필요합니다.",
+        evidence: [
+            "설명 구간의 속도는 일정해 청중이 내용을 따라가기 쉬웠습니다.",
+            "중요한 결론을 말할 때도 톤 변화가 작아 강조점이 약하게 전달되었습니다.",
+        ],
+        suggestion: "핵심 문장은 속도를 조금 늦추고 마지막 단어에 힘을 싣는 방식으로 연습해보세요.",
+    },
     eye_contact: {
         score: 4,
         summary: "발표 초반과 결론부에서 카메라를 안정적으로 응시해 청중과 연결되는 느낌이 잘 살아났습니다.",
         evidence: [
             "핵심 주제를 소개하는 00:18 구간에서 시선이 정면에 머물러 메시지 집중도가 높았습니다.",
-            "자료를 확인한 뒤 카메라로 돌아오는 속도가 빠른 편이라 발표 흐름이 끊기지 않았습니다.",
+            "자료를 확인한 뒤 카메라로 돌아오는 속도가 빨라 발표 흐름이 끊기지 않았습니다.",
         ],
         suggestion: "설명 자료를 볼 때도 한 문장을 마친 뒤 정면을 다시 바라보는 리듬을 유지해보세요.",
     },
-    facial_expression: {
-        score: 3,
-        summary: "전체적으로 차분한 표정이 유지되었지만, 강조 구간에서 표정 변화가 조금 더 보이면 전달력이 좋아집니다.",
-        evidence: [
-            "긍정적인 사례를 설명할 때 미소가 짧게 나타나 메시지의 분위기와 잘 맞았습니다.",
-            "문제점이나 전환점을 말할 때 표정 변화가 작아 내용의 중요도가 덜 드러났습니다.",
-        ],
-        suggestion: "핵심어 직전에 눈썹, 미소, 고개 끄덕임 중 하나를 의식적으로 더해보세요.",
-    },
-    gesture: {
+    media_use: {
         score: 4,
-        summary: "손동작이 발표 내용의 구조를 구분해주는 역할을 했고, 카메라 프레임 안에서도 안정적으로 유지되었습니다.",
-        evidence: [
-            "첫째, 둘째, 셋째를 나눌 때 손가락으로 순서를 표시해 청중이 흐름을 따라가기 쉬웠습니다.",
-            "중요 개념을 설명하는 구간에서 양손을 활용해 범위와 대비를 명확하게 보여주었습니다.",
-        ],
-        suggestion: "손동작을 멈추는 순간도 함께 설계하면 강조와 휴식의 대비가 더 선명해집니다.",
-    },
-    verbal_nonverbal_sync: {
-        score: 4,
-        summary: "주요 키워드와 손동작이 대체로 같은 타이밍에 맞아 메시지가 자연스럽게 강화되었습니다.",
-        evidence: [
-            "비교를 설명할 때 좌우 손동작이 말의 구조와 함께 움직여 이해를 도왔습니다.",
-            "일부 문장 끝에서는 제스처가 늦게 마무리되어 다음 문장과 겹치는 느낌이 있었습니다.",
-        ],
-        suggestion: "제스처를 문장 끝보다 반 박자 먼저 정리하면 발화 전환이 더 깔끔해집니다.",
-    },
-    audience_awareness: {
-        score: 3,
-        summary: "청중을 의식하는 정면 응시는 좋았지만, 반응을 받아들이는 듯한 미세한 표현은 더 보강할 수 있습니다.",
-        evidence: [
-            "질문을 던지는 문장에서 잠깐 멈추는 호흡이 있어 청중 참여를 유도했습니다.",
-            "중간 설명부에서는 고개 끄덕임이나 반응 확인 동작이 적어 일방향 전달처럼 보였습니다.",
-        ],
-        suggestion: "질문형 문장 뒤에 1초 정도 멈추고 고개를 살짝 끄덕이는 신호를 넣어보세요.",
-    },
-    no_distraction: {
-        score: 5,
-        summary: "불필요한 몸 흔들림이나 얼굴을 만지는 습관이 거의 없어 발표 화면이 안정적으로 유지되었습니다.",
-        evidence: [
-            "대기 자세에서 손이 일정하게 유지되어 산만한 인상이 적었습니다.",
-            "슬라이드 전환 중에도 시선과 손동작이 목적 있게 움직였습니다.",
-        ],
-        suggestion: "현재 안정감이 강점이므로, 긴장되는 구간에서도 같은 자세 루틴을 반복해보세요.",
-    },
-    facing: {
-        score: 4,
-        summary: "몸의 방향이 대부분 카메라 정면을 향해 있어 청중과 대면하고 있다는 인상이 잘 형성되었습니다.",
-        evidence: [
-            "도입과 결론에서 어깨 방향이 정면으로 유지되어 발표자의 존재감이 또렷했습니다.",
-            "자료 확인 시 상체가 약간 틀어지는 순간이 있었지만 곧바로 복귀했습니다.",
-        ],
-        suggestion: "슬라이드 확인용 시선을 짧게 처리하고, 어깨는 정면에 고정하는 연습이 도움이 됩니다.",
-    },
-    prosody: {
-        score: 3,
-        summary: "발음과 속도는 안정적이지만, 핵심 문장에서 음성의 높낮이 변화가 더 필요합니다.",
-        evidence: [
-            "설명 구간의 속도는 일정해 청중이 내용을 따라가기 쉬웠습니다.",
-            "중요한 결론을 말할 때도 톤 변화가 작아 강조점이 약하게 전달되었습니다.",
-        ],
-        suggestion: "핵심 문장은 속도를 10퍼센트 늦추고 마지막 단어에 힘을 싣는 방식으로 연습해보세요.",
-    },
-    language_choice: {
-        score: 4,
-        summary: "전문 용어와 쉬운 설명을 균형 있게 사용해 청중의 이해를 돕는 표현 선택이 돋보였습니다.",
-        evidence: [
-            "추상적인 개념 뒤에 바로 예시를 제시해 설명의 접근성이 높았습니다.",
-            "일부 문장은 길게 이어져 핵심 메시지가 뒤로 밀리는 느낌이 있었습니다.",
-        ],
-        suggestion: "긴 문장은 결론을 먼저 말하고 근거를 덧붙이는 순서로 다듬어보세요.",
-    },
-    audience_adaptation: {
-        score: 3,
-        summary: "청중 수준을 고려한 예시는 좋았지만, 반응에 맞춰 설명 밀도를 조절하는 장면은 제한적이었습니다.",
-        evidence: [
-            "어려운 개념을 생활 속 사례로 바꾸어 말한 점은 효과적이었습니다.",
-            "후반부에는 정보량이 늘어 청중이 소화할 시간을 주는 장치가 부족했습니다.",
-        ],
-        suggestion: "정보가 많은 구간 뒤에는 한 문장 요약을 넣어 청중의 이해를 확인해보세요.",
-    },
-    media_interaction: {
-        score: 4,
-        summary: "슬라이드 전환과 화면 공유 흐름이 자연스러워 발표의 전문성이 잘 유지되었습니다.",
+        summary: "슬라이드 전환과 화면 공유 흐름이 자연스러워 발표 목적에 맞는 매체 활용이 이루어졌습니다.",
         evidence: [
             "화면 전환 직후 바로 다음 설명으로 연결되어 공백이 거의 없었습니다.",
-            "포인터나 화면 강조 도구를 더 적극적으로 쓰면 시각적 안내가 강화될 수 있습니다.",
+            "복잡한 자료에서는 볼 위치를 먼저 짚어주면 시각적 안내가 더 강화될 수 있습니다.",
         ],
-        suggestion: "복잡한 표나 이미지에서는 말로 설명하기 전에 먼저 볼 위치를 짚어주세요.",
-    },
-    professional_appearance: {
-        score: 4,
-        summary: "복장과 배경이 발표 맥락에 잘 맞고, 화면 안에서 발표자의 인상이 단정하게 유지되었습니다.",
-        evidence: [
-            "배경의 시각적 요소가 적어 발표자와 자료에 집중하기 쉬웠습니다.",
-            "조명이 얼굴을 충분히 비춰 표정과 시선 방향이 잘 보였습니다.",
-        ],
-        suggestion: "카메라 높이를 눈높이에 조금 더 맞추면 대면감이 한층 좋아집니다.",
+        suggestion: "표나 이미지가 등장하는 순간에는 핵심 위치를 먼저 안내한 뒤 설명을 시작해보세요.",
     },
 };
 
 const DUMMY_SUMMARY = {
-    overall: "이번 발표는 안정적인 자세와 명확한 구조가 돋보였습니다. 시선 처리와 제스처는 메시지를 보조하는 방향으로 잘 사용되었고, 자료 전환도 발표 흐름을 크게 방해하지 않았습니다. 다만 핵심 문장에서는 음성의 강약과 표정 변화를 조금 더 분명하게 주면 청중의 집중도가 더 높아질 수 있습니다.",
+    overall: "이번 발표는 주제와 청중을 고려한 내용 구성이 안정적이었고, 도입-전개-마무리의 흐름도 비교적 분명했습니다. 핵심 개념을 설명하는 어휘 선택과 매체 활용은 발표 목적에 잘 맞았습니다. 다만 결론부의 논지 강화와 핵심 문장의 음성 강조를 조금 더 분명하게 만들면 전달력이 높아질 수 있습니다.",
     strengths: [
-        "카메라 정면을 자주 바라보며 청중과 연결되는 인상을 만들었습니다.",
-        "손동작이 발표 구조를 구분해주어 설명의 흐름을 따라가기 쉬웠습니다.",
-        "슬라이드 전환과 화면 공유가 자연스러워 발표의 전문성이 유지되었습니다.",
+        "청중 수준에 맞춘 예시를 사용해 주제 이해를 도왔습니다.",
+        "도입에서 발표의 방향을 제시해 전체 흐름을 따라가기 쉬웠습니다.",
+        "발표 상황에 맞는 태도와 매체 활용으로 전문성이 유지되었습니다.",
     ],
     suggestions: [
-        "핵심 문장에서는 말의 속도를 조금 늦추고 마지막 단어에 힘을 실어보세요.",
-        "중요한 전환점에서 표정 변화나 고개 끄덕임을 더하면 메시지가 선명해집니다.",
-        "정보량이 많은 구간 뒤에는 한 문장 요약을 넣어 청중의 이해를 확인해보세요.",
+        "결론에서 핵심 논지를 한 문장으로 다시 정리해 마무리감을 강화해보세요.",
+        "내용 전환부마다 연결 표현을 넣어 조직의 흐름을 더 분명히 만들어보세요.",
+        "강조할 문장은 속도를 늦추고 억양 변화를 주어 청중의 주의를 모아보세요.",
     ],
 };
+
+function buildDemoFeedback(item, category, index = 0) {
+    const baseScore = 3 + (index % 3 === 0 ? 1 : 0);
+    return {
+        score: baseScore,
+        summary: `${item.label}은 ${category.label} 영역에서 대체로 안정적으로 수행되었습니다. ${item.desc}`,
+        evidence: [
+            `${item.label}과 관련된 장면에서 발표 목적과 청중을 고려한 선택이 관찰되었습니다.`,
+            `일부 구간에서는 ${item.label}을 더 분명하게 드러내면 발표의 설득력과 전달력이 높아질 수 있습니다.`,
+        ],
+        suggestion: `${item.label}을 다음 연습의 우선 점검 항목으로 두고, 발표 전 체크리스트에 한 문장 기준을 추가해보세요.`,
+    };
+}
 
 function getInitialSelections() {
     return FEEDBACK_CATEGORIES.reduce((acc, category) => {
@@ -212,7 +162,7 @@ export default function FeedbackDemoPage() {
                             {FEEDBACK_CATEGORIES.map((category) => {
                                 const selectedItemId = selectedByCategory[category.id];
                                 const selectedItem = category.items.find((item) => item.id === selectedItemId) || category.items[0];
-                                const feedback = DUMMY_FEEDBACK[selectedItem.id] || DUMMY_FEEDBACK.eye_contact;
+                                const feedback = DUMMY_FEEDBACK[selectedItem.id] || buildDemoFeedback(selectedItem, category, category.items.findIndex((item) => item.id === selectedItem.id));
 
                                 return (
                                     <article key={category.id} className="feedback-demo-card">
@@ -320,13 +270,13 @@ export default function FeedbackDemoPage() {
                     </div>
                     <div className="chat-message user">
                         <div className="message-content">
-                            <p>시선 처리와 음성 전달을 우선 개선하고 싶어요.</p>
+                            <p>내용 흐름과 표현 전달을 우선 개선하고 싶어요.</p>
                         </div>
                     </div>
                     <div className="chat-message assistant">
                         <div className="message-avatar">🤖</div>
                         <div className="message-content markdown-content">
-                            <p>좋아요. 다음 연습에서는 핵심 문장마다 정면 응시를 2초 유지하고, 결론 문장은 속도를 조금 늦춰 말해보세요.</p>
+                            <p>좋아요. 다음 연습에서는 도입-본론-결론의 연결 문장을 먼저 표시하고, 핵심 문장은 속도를 조금 늦춰 말해보세요.</p>
                         </div>
                     </div>
                 </div>
@@ -337,8 +287,8 @@ export default function FeedbackDemoPage() {
                         <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("이번 발표에서 가장 개선되어야 할 부분이 뭘까?")}>
                             이번 발표에서 가장 개선되어야 할 부분이 뭘까?
                         </button>
-                        <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("시선 처리와 제스처를 더 잘하려면 어떻게 해야 할까?")}>
-                            시선 처리와 제스처를 더 잘하려면 어떻게 해야 할까?
+                        <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("내용 조직과 표현 전달을 더 잘하려면 어떻게 해야 할까?")}>
+                            내용 조직과 표현 전달을 더 잘하려면 어떻게 해야 할까?
                         </button>
                     </div>
                 </div>

@@ -95,9 +95,9 @@ const GROWTH_CHART = {
 };
 
 const CATEGORY_LINE_COLORS = {
-    visual: "#2563eb",
-    verbal: "#059669",
-    media: "#d97706",
+    content: "#2563eb",
+    organization: "#059669",
+    expression: "#d97706",
 };
 
 function getDaysLeft(dday) {
@@ -889,7 +889,7 @@ export default function PresentationDetailPage({ params }) {
                                 {growthSeries.map((series) => (
                                     <span key={series.category.id}>
                                         <i style={{ backgroundColor: series.color }} />
-                                        {series.category.shortLabel}
+                                        {series.category.label}
                                     </span>
                                 ))}
                             </div>
@@ -937,7 +937,7 @@ export default function PresentationDetailPage({ params }) {
                                                     className="growth-point"
                                                     style={{ stroke: series.color }}
                                                 >
-                                                    <title>{`${series.category.shortLabel} ${point.attemptNo}회차 ${point.score.toFixed(1)}/5`}</title>
+                                                    <title>{`${series.category.label} ${point.attemptNo}회차 ${point.score.toFixed(1)}/5`}</title>
                                                 </circle>
                                             ))}
                                         </g>
@@ -958,7 +958,7 @@ export default function PresentationDetailPage({ params }) {
                             <div key={category.id} className="category-average">
                                 <div>
                                     <span className="category-average-icon">{category.icon}</span>
-                                    <strong>{category.shortLabel}</strong>
+                                    <strong>{category.label}</strong>
                                 </div>
                                 <span>{formatScore(presentation.categoryAverages?.[category.id])}/5</span>
                             </div>

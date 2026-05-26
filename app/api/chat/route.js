@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
 
 export async function POST(request) {
     try {
@@ -15,7 +16,7 @@ export async function POST(request) {
         }
 
         const genAI = new GoogleGenerativeAI(apiKey.trim());
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+        const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || "gemini-2.5-flash" });
 
         // 분석 결과 컨텍스트 구성
         const { summary = {}, timestamps = [] } = analysisContext;
@@ -26,6 +27,9 @@ export async function POST(request) {
 - 개선 제안: ${(summary.suggestions || []).join(", ") || "없음"}
 - 타임스탬프 피드백 수: ${timestamps.length}개
 `;
+        const feedbackAreaInfo = FEEDBACK_CATEGORIES
+            .map((category) => `- ${category.label} (${category.items.map((item) => item.label).join(", ")})`)
+            .join("\n");
 
         // 시스템 프롬프트
         const systemPrompt = `당신은 발표(프레젠테이션) 성찰을 돕는 전문 AI 멘토입니다.
@@ -38,9 +42,7 @@ export async function POST(request) {
 4. 사용자의 성장 가능성을 믿고 긍정적인 태도를 유지하세요.
 
 피드백이 다루는 3대 영역:
-- 시각적 수치 및 신체 활용 (시선 접촉, 표정, 제스처, 언어-비언어 동기화, 청중 인식, 방해 동작 지양, 청중 대면)
-- 음성 전달 수행 (구어 표현 및 준언어, 언어 선택, 청중 적응)
-- 매체 및 환경 관리 (기술 및 매체 상호작용, 전문적 외양)
+${feedbackAreaInfo}
 
 대화 스타일:
 - 친근하고 공감적인 톤 (존댓말 사용)

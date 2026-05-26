@@ -1,45 +1,50 @@
-// 발표 피드백 영역 정의 (3 카테고리, 12개 세부 항목)
+// 발표 피드백 영역 정의 (3대 영역, 17개 하위 영역)
 
 export const FEEDBACK_CATEGORIES = [
     {
-        id: "visual",
-        label: "시각적 수치 및 신체 활용",
-        shortLabel: "Visual & Body",
-        icon: "👁️",
+        id: "content",
+        label: "내용",
+        shortLabel: "내용",
+        icon: "📘",
         items: [
-            { id: "eye_contact", label: "시선 접촉", desc: "카메라 렌즈를 응시하며 청중과 눈을 맞추는 빈도와 적절성" },
-            { id: "facial_expression", label: "얼굴 표정", desc: "메시지의 감정과 의미를 강화하는 안면 근육의 움직임" },
-            { id: "gesture", label: "제스처", desc: "화면 범위(Camera frame) 내에서 메시지를 강조하기 위해 사용하는 손동작" },
-            { id: "verbal_nonverbal_sync", label: "언어-비언어 동기화", desc: "말의 내용과 표정, 손짓이 시간적으로 일치하는 정도" },
-            { id: "audience_awareness", label: "비언어적 청중 인식", desc: "화면 너머의 청중을 인지하고 있음을 보여주는 미세한 반응(고개 끄덕임 등)" },
-            { id: "no_distraction", label: "방해 동작 지양", desc: "카메라 앞에서 불필요하게 몸을 흔들거나 만지는 등 산만한 습관의 부재" },
-            { id: "facing", label: "청중 대면", desc: "앉아 있는 상태에서 신체의 방향이 정면(카메라)을 올바르게 향하고 있는 상태" },
+            { id: "topic_relevance", label: "주제 적절성", desc: "청중과 발표 상황에 적절한 주제를 선정하였다." },
+            { id: "vocabulary_expression", label: "어휘 및 표현 적절성", desc: "상황과 맥락에 적절한 어휘를 선택하여 표현하였다." },
+            { id: "grammar_accuracy", label: "문법 및 언어 정확성", desc: "어법과 문법에 맞게 표현하였다." },
+            { id: "audience_customization", label: "청중 맞춤성", desc: "청중의 수준과 특성을 고려하여 발표 내용을 효과적으로 조정하였다." },
         ],
     },
     {
-        id: "verbal",
-        label: "음성 전달 수행",
-        shortLabel: "Verbal & Vocal",
-        icon: "🎤",
+        id: "organization",
+        label: "조직",
+        shortLabel: "조직",
+        icon: "🧭",
         items: [
-            { id: "prosody", label: "구어 표현 및 준언어", desc: "목소리의 톤, 속도, 크기 등을 조절하여 전달력을 높이는 능력" },
-            { id: "language_choice", label: "언어 선택", desc: "텍스트의 정교함과 상황에 맞는 단어 사용 능력" },
-            { id: "audience_adaptation", label: "청중 적응", desc: "실시간 채팅이나 화상 화면의 반응에 따라 발표 내용을 유연하게 조정하는 능력" },
+            { id: "intro_structure", label: "도입 구성", desc: "청중이 발표 주제와 발표자에 대해 이해할 수 있도록 도입을 구성하였다." },
+            { id: "organization_flow", label: "내용 조직 및 흐름", desc: "내용 간 연결이 자연스럽고 체계적인 조직 구조를 활용하였다." },
+            { id: "sentence_clarity", label: "문장 완결성 및 명료성", desc: "한 가지 생각이나 내용을 완결된 문장으로 명확하게 전달하였다." },
+            { id: "conclusion_structure", label: "결론 구성", desc: "논지를 강화하고 청중이 발표의 마무리를 명확히 인식할 수 있도록 결론을 구성하였다." },
+            { id: "time_management", label: "시간 운영", desc: "발표시간을 초과하지 않고 효과적으로 활용하였다." },
         ],
     },
     {
-        id: "media",
-        label: "매체 및 환경 관리",
-        shortLabel: "Media & Professionalism",
-        icon: "🖥️",
+        id: "expression",
+        label: "표현",
+        shortLabel: "표현",
+        icon: "🎙️",
         items: [
-            { id: "media_interaction", label: "기술 및 매체 상호작용", desc: "화면 공유, 슬라이드 넘기기 등 디지털 도구를 매끄럽게 다루는 능력" },
-            { id: "professional_appearance", label: "전문적 외양", desc: "카메라에 비치는 연사의 복장과 배경이 발표 맥락에 부합하는 정도" },
+            { id: "vocal_expression", label: "음성 표현", desc: "음성 표현과 준언어적 요소(억양, 속도, 강세 등)를 효과적으로 활용하였다." },
+            { id: "nonverbal_expression", label: "비언어적 표현", desc: "언어적 메시지를 보완하는 비언어적 행동을 적절히 활용하였다." },
+            { id: "eye_contact", label: "시선 처리", desc: "청중과 적절한 시선 접촉을 유지하였다." },
+            { id: "pronunciation_fluency", label: "발음 및 말하기 유창성", desc: "발음과 말하기 속도가 적절하며 매끄럽게 말하였다." },
+            { id: "gesture_movement", label: "몸짓 및 움직임", desc: "전달 내용을 효과적으로 지원하는 움직임과 몸짓을 활용하였다." },
+            { id: "attitude_attire", label: "태도 및 복장", desc: "발표 상황과 맥락에 적절한 복장과 태도를 유지하였다." },
+            { id: "movement_control", label: "불필요한 움직임 통제", desc: "산만하거나 불필요한 신체 움직임을 보이지 않았다." },
+            { id: "media_use", label: "매체 활용", desc: "기술 및 매체를 발표 목적에 맞게 적절히 활용하였다." },
         ],
     },
 ];
 
-// flat lookup: id → { ...item, categoryId, categoryLabel }
+// flat lookup: id -> { ...item, categoryId, categoryLabel }
 export const FEEDBACK_ITEMS_BY_ID = FEEDBACK_CATEGORIES.reduce((acc, cat) => {
     cat.items.forEach((item) => {
         acc[item.id] = { ...item, categoryId: cat.id, categoryLabel: cat.label };
@@ -48,3 +53,10 @@ export const FEEDBACK_ITEMS_BY_ID = FEEDBACK_CATEGORIES.reduce((acc, cat) => {
 }, {});
 
 export const ALL_ITEM_IDS = Object.keys(FEEDBACK_ITEMS_BY_ID);
+
+export function buildEmptyCategoryAverages() {
+    return FEEDBACK_CATEGORIES.reduce((acc, category) => {
+        acc[category.id] = null;
+        return acc;
+    }, {});
+}
