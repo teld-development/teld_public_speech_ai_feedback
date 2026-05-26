@@ -299,10 +299,15 @@ export default function PresentationDetailPage({ params }) {
 
     const completedAttempts = useMemo(
         () => attempts
-            .filter((attempt) => attempt.status === "completed" && typeof attempt.scoreAverage === "number")
+            .filter((attempt) => attempt.status === "completed" && attempt.analysisResult)
             .slice()
             .sort((a, b) => (a.attemptNo || 0) - (b.attemptNo || 0)),
         [attempts]
+    );
+
+    const scoredAttempts = useMemo(
+        () => completedAttempts.filter((attempt) => typeof attempt.scoreAverage === "number"),
+        [completedAttempts]
     );
 
     const cleanupTargets = useMemo(
@@ -311,8 +316,8 @@ export default function PresentationDetailPage({ params }) {
     );
 
     const growthSeries = useMemo(
-        () => buildCategoryGrowthSeries(completedAttempts),
-        [completedAttempts]
+        () => buildCategoryGrowthSeries(scoredAttempts),
+        [scoredAttempts]
     );
 
     const totalRatio = useMemo(
@@ -877,11 +882,11 @@ export default function PresentationDetailPage({ params }) {
                 <section className="session-panel">
                     <div className="session-panel-header">
                         <h2>영역별 성장곡선</h2>
-                        <span>{completedAttempts.length}개 분석 완료</span>
+                        <span>{scoredAttempts.length}개 점수 산출</span>
                     </div>
-                    {completedAttempts.length === 0 ? (
+                    {scoredAttempts.length === 0 ? (
                         <div className="attempt-empty">
-                            <p>분석 완료된 회차가 생기면 영역별 평균 점수 변화가 여기에 표시됩니다.</p>
+                            <p>점수가 산출된 회차가 생기면 영역별 평균 점수 변화가 여기에 표시됩니다.</p>
                         </div>
                     ) : (
                         <>
@@ -909,10 +914,10 @@ export default function PresentationDetailPage({ params }) {
                                             </g>
                                         );
                                     })}
-                                    {completedAttempts.map((attempt, index) => {
-                                        const x = completedAttempts.length === 1
+                                    {scoredAttempts.map((attempt, index) => {
+                                        const x = scoredAttempts.length === 1
                                             ? GROWTH_CHART.pad.left + (GROWTH_CHART.width - GROWTH_CHART.pad.left - GROWTH_CHART.pad.right) / 2
-                                            : GROWTH_CHART.pad.left + ((GROWTH_CHART.width - GROWTH_CHART.pad.left - GROWTH_CHART.pad.right) * index) / (completedAttempts.length - 1);
+                                            : GROWTH_CHART.pad.left + ((GROWTH_CHART.width - GROWTH_CHART.pad.left - GROWTH_CHART.pad.right) * index) / (scoredAttempts.length - 1);
                                         return (
                                             <text key={attempt.id} x={x} y="224" textAnchor="middle" className="growth-axis-label">
                                                 {attempt.attemptNo}회

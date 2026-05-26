@@ -33,7 +33,7 @@ function ddayLabel(dday) {
 
 function sessionStateLabel(presentation) {
     if (presentation.status === "archived") return "보관됨";
-    if (typeof presentation.latestScoreAverage === "number") return "분석 있음";
+    if (presentation.latestAttemptId || typeof presentation.latestScoreAverage === "number") return "분석 있음";
     return "준비 중";
 }
 
