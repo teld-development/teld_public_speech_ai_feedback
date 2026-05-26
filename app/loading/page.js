@@ -6,6 +6,7 @@ import { useAuth } from "../lib/AuthProvider";
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
 import { storage } from "../lib/firebase";
 import { completePresentationAttempt, failPresentationAttempt, markAttemptAnalyzing } from "../lib/presentations";
+import { readJsonResponse } from "../lib/httpResponse";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -166,7 +167,11 @@ export default function LoadingPage() {
                             });
                             xhr.onload = () => {
                                 if (xhr.status >= 200 && xhr.status < 300) {
-                                    resolve(JSON.parse(xhr.responseText));
+                                    try {
+                                        resolve(JSON.parse(xhr.responseText));
+                                    } catch (parseErr) {
+                                        reject(new Error("업로드 서버 응답을 해석하지 못했습니다."));
+                                    }
                                 } else {
                                     let msg = `HTTP ${xhr.status}`;
                                     try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
@@ -218,8 +223,8 @@ export default function LoadingPage() {
                                 body: materialFile,
                             }
                         );
-                        if (!matResponse.ok) throw new Error(`HTTP ${matResponse.status}`);
-                        const materialResult = await matResponse.json();
+                        const materialResult = await readJsonResponse(matResponse, "발표 자료 업로드에 실패했습니다.");
+                        if (!matResponse.ok) throw new Error(materialResult?.error || `HTTP ${matResponse.status}`);
                         materialUrl = materialResult.url;
                         console.log("[Loading] 발표 자료 업로드 완료:", materialUrl);
                     } catch (lpError) {
@@ -266,12 +271,10 @@ export default function LoadingPage() {
                 setProgress(90);
                 setCurrentStep(3);
 
+                const analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
                 if (!analyzeResponse.ok) {
-                    const errorData = await analyzeResponse.json();
-                    throw new Error(errorData.error || "분석에 실패했습니다.");
+                    throw new Error(analysisResult?.error || "분석에 실패했습니다.");
                 }
-
-                const analysisResult = await analyzeResponse.json();
                 console.log("[Loading] 분석 완료");
 
                 setProgress(95);

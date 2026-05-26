@@ -5,6 +5,7 @@ import { del } from "@vercel/blob";
 import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS } from "../../lib/feedbackAreas";
 
 export const maxDuration = 300;
+export const runtime = "nodejs";
 
 const FILE_PROCESSING_POLL_MS = 1500;
 const VIDEO_PROCESSING_MAX_WAIT_MS = 180000;
@@ -14,6 +15,13 @@ const MATERIAL_PROCESSING_MAX_WAIT_MS = 45000;
 function extractJSON(text) {
     const fenced = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
     return fenced ? fenced[1] : text;
+}
+
+function safeTempFileName(fileName, fallback) {
+    return String(fileName || fallback)
+        .replace(/[^a-zA-Z0-9_.-]/g, "_")
+        .replace(/_+/g, "_")
+        .slice(0, 160);
 }
 
 async function waitForActiveFile(fileManager, fileName, { maxWaitMs, label }) {
@@ -241,14 +249,15 @@ export async function POST(request) {
         const os = await import("os");
 
         const tempDir = os.tmpdir();
-        const tempFilePath = path.join(tempDir, `upload_${Date.now()}_${fileName}`);
+        const safeVideoFileName = safeTempFileName(fileName, "upload.mp4");
+        const tempFilePath = path.join(tempDir, `upload_${Date.now()}_${safeVideoFileName}`);
         fs.writeFileSync(tempFilePath, videoBuffer);
 
         let uploadResult;
         try {
             uploadResult = await fileManager.uploadFile(tempFilePath, {
                 mimeType: mimeType || "video/mp4",
-                displayName: fileName,
+                displayName: safeVideoFileName,
             });
         } finally {
             fs.unlinkSync(tempFilePath);
@@ -266,7 +275,7 @@ export async function POST(request) {
                 const mRes = await fetch(materialUrl);
                 if (mRes.ok) {
                     const mBuffer = Buffer.from(await mRes.arrayBuffer());
-                    const mFileName = materialUrl.split("/").pop() || "material.pdf";
+                    const mFileName = safeTempFileName(materialUrl.split("/").pop(), "material.pdf");
                     const materialTempPath = path.join(tempDir, `mat_${Date.now()}_${mFileName}`);
                     fs.writeFileSync(materialTempPath, mBuffer);
 
@@ -293,7 +302,7 @@ export async function POST(request) {
 
         // ── LangChain 모델 초기화 ─────────────────────────────────────────────
         const model = new ChatGoogleGenerativeAI({
-            model: "gemini-3-flash-preview",
+            model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
             apiKey: cleanApiKey,
         });
 

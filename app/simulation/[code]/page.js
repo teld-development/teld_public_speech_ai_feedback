@@ -6,6 +6,7 @@ import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import { db, storage } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
+import { readJsonResponse } from "../../lib/httpResponse";
 import {
     completePresentationAttempt,
     deletePresentationAttempt,
@@ -106,16 +107,10 @@ export default function SimulationWaitingPage({ params }) {
                                 }),
                             });
 
+                            const analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
                             if (!analyzeResponse.ok) {
-                                let message = "분석에 실패했습니다.";
-                                try {
-                                    const errorData = await analyzeResponse.json();
-                                    message = errorData.error || message;
-                                } catch { }
-                                throw new Error(message);
+                                throw new Error(analysisResult?.error || "분석에 실패했습니다.");
                             }
-
-                            const analysisResult = await analyzeResponse.json();
 
                             if (data.presentationId && data.attemptId) {
                                 await completePresentationAttempt(user, data.presentationId, data.attemptId, analysisResult, {

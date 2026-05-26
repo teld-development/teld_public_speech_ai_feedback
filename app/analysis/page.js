@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
-import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS } from "../lib/feedbackAreas";
+import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
+
+function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
+    return FEEDBACK_CATEGORIES.reduce((acc, category) => {
+        const firstActiveItem = category.items.find((item) => activeItemIds.includes(item.id));
+        acc[category.id] = firstActiveItem?.id || category.items[0]?.id || "";
+        return acc;
+    }, {});
+}
 
 export default function AnalysisPage() {
     const router = useRouter();
@@ -22,6 +30,7 @@ export default function AnalysisPage() {
     const [chatInput, setChatInput] = useState("");
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [selectedItemIds, setSelectedItemIds] = useState([]);
+    const [selectedByCategory, setSelectedByCategory] = useState(() => buildInitialSelections());
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -62,6 +71,38 @@ export default function AnalysisPage() {
             chatEndRef.current.scrollIntoView({ behavior: "smooth" });
         }
     }, [chatMessages]);
+
+    useEffect(() => {
+        const activeIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
+        setSelectedByCategory((prev) => {
+            const next = {};
+            FEEDBACK_CATEGORIES.forEach((category) => {
+                const activeItems = category.items.filter((item) => activeIds.includes(item.id));
+                const currentStillActive = activeItems.some((item) => item.id === prev[category.id]);
+                next[category.id] = currentStillActive
+                    ? prev[category.id]
+                    : activeItems[0]?.id || category.items[0]?.id || "";
+            });
+            return next;
+        });
+    }, [selectedItemIds]);
+
+    const { timestamps = [], scores = {}, summary = {} } = analysisData || {};
+
+    const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
+
+    const activeCategories = useMemo(() => {
+        return FEEDBACK_CATEGORIES
+            .map((category) => ({
+                ...category,
+                items: category.items.filter((item) => activeItemIds.includes(item.id)),
+            }))
+            .filter((category) => category.items.length > 0);
+    }, [activeItemIds]);
+
+    const totalFeedbackAreaCount = useMemo(() => {
+        return activeCategories.reduce((sum, category) => sum + category.items.length, 0);
+    }, [activeCategories]);
 
     const handleTimestampClick = (timestamp) => {
         setSelectedTimestamp(timestamp);
@@ -137,10 +178,6 @@ export default function AnalysisPage() {
         );
     }
 
-    const { timestamps = [], scores = {}, summary = {}, materialAnalysis = null, conditionsAnalysis = null } = analysisData || {};
-
-    const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
-
     // 항목별로 타임스탬프 매칭 (공백·특수문자 정규화 후 비교)
     const normalizeLabel = (s) => (s || "").replace(/\s+/g, "").replace(/[-–—_]/g, "").toLowerCase();
     const matchTimestampsToItem = (item, categoryLabel) => {
@@ -176,8 +213,14 @@ export default function AnalysisPage() {
         });
     };
 
+    const getItemSuggestion = (categoryIndex) => {
+        const suggestions = summary.suggestions || [];
+        if (suggestions.length > 0) return suggestions[categoryIndex % suggestions.length];
+        return "선택한 타임스탬프 피드백을 기준으로 다음 연습에서 같은 장면을 다시 확인해보세요.";
+    };
+
     return (
-        <main className={`analysis-page-v2 ${isChatOpen ? "chat-open" : ""}`}>
+        <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
             <header className="analysis-header-v2">
                 <div className="header-content">
                     <h1>발표 분석 결과</h1>
@@ -189,7 +232,7 @@ export default function AnalysisPage() {
                 </div>
             </header>
 
-            <div className="analysis-main-v2">
+            <div className="analysis-main-v2 feedback-demo-main">
                 <section className="video-summary-section">
                     <div className="video-container-v2">
                         {videoUrl ? (
@@ -197,7 +240,7 @@ export default function AnalysisPage() {
                                 브라우저가 비디오 재생을 지원하지 않습니다.
                             </video>
                         ) : (
-                            <div className="video-placeholder-v2">
+                            <div className="video-placeholder-v2 feedback-demo-video">
                                 <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                                     <polygon points="5 3 19 12 5 21 5 3" />
                                 </svg>
@@ -212,13 +255,13 @@ export default function AnalysisPage() {
 
                         <div className="summary-lists">
                             <div className="summary-block strengths">
-                                <h4>💪 강점</h4>
+                                <h4>강점</h4>
                                 <ul>
                                     {(summary.strengths || []).map((item, idx) => (<li key={idx}>{item}</li>))}
                                 </ul>
                             </div>
                             <div className="summary-block suggestions">
-                                <h4>💡 개선 제안</h4>
+                                <h4>개선 제안</h4>
                                 <ul>
                                     {(summary.suggestions || []).map((item, idx) => (<li key={idx}>{item}</li>))}
                                 </ul>
@@ -228,146 +271,110 @@ export default function AnalysisPage() {
                 </section>
 
                 <div className="bottom-sections-wrapper">
-                    <section className="detailed-feedback-section">
+                    <section className="detailed-feedback-section feedback-demo-section">
                         <div className="detailed-feedback-header">
-                            <h3>📝 영역별 상세 피드백</h3>
-                            <span className="timestamps-count">{timestamps.length}개 피드백</span>
+                            <h3>영역별 상세 피드백</h3>
+                            <span className="timestamps-count">{totalFeedbackAreaCount}개 하위 영역</span>
                         </div>
-                        <p className="timestamps-hint-v2">타임스탬프를 클릭하면 해당 위치로 영상이 이동합니다</p>
+                        <p className="timestamps-hint-v2">카드 헤더의 하위 영역을 선택하면 해당 피드백 내용이 표시됩니다</p>
 
-                        {FEEDBACK_CATEGORIES.map((cat) => {
-                            const catItems = cat.items.filter((it) => activeItemIds.includes(it.id));
-                            if (catItems.length === 0) return null;
+                        <div className="feedback-demo-category-row">
+                            {activeCategories.map((cat, categoryIndex) => {
+                                const selectedItemId = selectedByCategory[cat.id];
+                                const selectedItem = cat.items.find((item) => item.id === selectedItemId) || cat.items[0];
+                                const itemTimestamps = selectedItem ? matchTimestampsToItem(selectedItem, cat.label) : [];
+                                const score = selectedItem ? scores[selectedItem.id] : null;
+                                const primaryFeedback = itemTimestamps[0]?.feedback || "이 항목에 대한 타임스탬프 피드백이 아직 없습니다.";
+                                const scoreSummary = score != null
+                                    ? `${selectedItem.label} 점수는 ${score}/5입니다. ${primaryFeedback}`
+                                    : primaryFeedback;
 
-                            return (
-                                <div key={cat.id} className="feedback-category-block">
-                                    <div className="feedback-category-title">
-                                        <span className="category-icon">{cat.icon}</span>
-                                        <div>
-                                            <h4>{cat.label}</h4>
-                                            <span className="category-short">{cat.shortLabel}</span>
-                                        </div>
-                                    </div>
-                                    <div className="feedback-areas-grid">
-                                        {catItems.map((item) => {
-                                            const itemTimestamps = matchTimestampsToItem(item, cat.label);
-                                            const score = scores[item.id];
-                                            return (
-                                                <div key={item.id} className="feedback-area-container">
-                                                    <div className="feedback-area-header">
-                                                        <div className="feedback-area-title">
-                                                            <h4>{item.label}</h4>
-                                                            <span className="feedback-area-desc">{item.desc}</span>
-                                                        </div>
-                                                        <div className="feedback-area-header-right">
-                                                            {score != null && (
-                                                                <div className="score-badge" data-score={score} title={`${score}/5점`}>
-                                                                    {[1,2,3,4,5].map((n) => (
-                                                                        <span key={n} className={`score-dot ${n <= score ? "filled" : ""}`} />
-                                                                    ))}
-                                                                    <span className="score-value">{score}<span className="score-max">/5</span></span>
-                                                                </div>
-                                                            )}
-                                                            <span className="feedback-area-count">{itemTimestamps.length}개</span>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="feedback-area-content">
-                                                        {itemTimestamps.length > 0 ? (
-                                                            itemTimestamps.map((t, index) => {
-                                                                const seconds = t.seconds ?? parseTimeToSeconds(t.time);
-                                                                const isSelected = selectedTimestamp === t;
-                                                                return (
-                                                                    <div
-                                                                        key={index}
-                                                                        className={`timestamp-card-mini ${isSelected ? "selected" : ""}`}
-                                                                        onClick={() => handleTimestampClick({ ...t, seconds })}
-                                                                    >
-                                                                        <span className="time-badge-mini">{t.time}</span>
-                                                                        <p className="timestamp-feedback-mini">{t.feedback}</p>
-                                                                    </div>
-                                                                );
-                                                            })
-                                                        ) : (
-                                                            <div className="no-feedback-message">
-                                                                <span>이 항목에 대한 피드백이 없습니다</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                return (
+                                    <article key={cat.id} className="feedback-demo-card">
+                                        <div className="feedback-demo-card-header">
+                                            <div className="feedback-category-title feedback-demo-title">
+                                                <span className="category-icon">{cat.icon}</span>
+                                                <div>
+                                                    <h4>{cat.label}</h4>
+                                                    <span className="category-short">{cat.shortLabel}</span>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                            </div>
+                                            <div className="feedback-demo-tabs" aria-label={`${cat.label} 하위 영역`}>
+                                                {cat.items.map((item) => (
+                                                    <button
+                                                        key={item.id}
+                                                        type="button"
+                                                        className={`feedback-demo-tab ${selectedItem?.id === item.id ? "active" : ""}`}
+                                                        onClick={() => setSelectedByCategory((prev) => ({
+                                                            ...prev,
+                                                            [cat.id]: item.id,
+                                                        }))}
+                                                    >
+                                                        {item.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {selectedItem && (
+                                            <div className="feedback-demo-card-body">
+                                                <div className="feedback-area-header feedback-demo-active-header">
+                                                    <div className="feedback-area-title">
+                                                        <h4>{selectedItem.label}</h4>
+                                                        <span className="feedback-area-desc">{selectedItem.desc}</span>
+                                                    </div>
+                                                    {score != null && (
+                                                        <div className="score-badge" data-score={score} title={`${score}/5점`}>
+                                                            {[1, 2, 3, 4, 5].map((n) => (
+                                                                <span key={n} className={`score-dot ${n <= score ? "filled" : ""}`} />
+                                                            ))}
+                                                            <span className="score-value">{score}<span className="score-max">/5</span></span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="timestamp-card-mini feedback-demo-summary">
+                                                    <span className="time-badge-mini">요약</span>
+                                                    <p className="timestamp-feedback-mini">{scoreSummary}</p>
+                                                </div>
+
+                                                <div className="feedback-demo-evidence-list">
+                                                    {itemTimestamps.length > 0 ? (
+                                                        itemTimestamps.map((t, index) => {
+                                                            const seconds = t.seconds ?? parseTimeToSeconds(t.time);
+                                                            const isSelected = selectedTimestamp?.time === t.time
+                                                                && selectedTimestamp?.item === t.item
+                                                                && selectedTimestamp?.feedback === t.feedback;
+                                                            return (
+                                                                <div
+                                                                    key={index}
+                                                                    className={`timestamp-card-mini ${isSelected ? "selected" : ""}`}
+                                                                    onClick={() => handleTimestampClick({ ...t, seconds })}
+                                                                >
+                                                                    <span className="time-badge-mini">{t.time}</span>
+                                                                    <p className="timestamp-feedback-mini">{t.feedback}</p>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <div className="no-feedback-message">
+                                                            <span>이 항목에 대한 피드백이 없습니다</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="feedback-demo-suggestion">
+                                                    <strong>개선 제안</strong>
+                                                    <p>{getItemSuggestion(categoryIndex)}</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </div>
                     </section>
 
-                    {materialAnalysis && (
-                        <section className="lesson-plan-section">
-                            <div className="lesson-plan-header">
-                                <span className="lesson-plan-icon">📄</span>
-                                <h3>발표 자료-발표 정합성 분석</h3>
-                                <span className={`consistency-badge ${materialAnalysis.overallConsistency === '높음' ? 'high' : materialAnalysis.overallConsistency === '보통' ? 'medium' : 'low'}`}>
-                                    {materialAnalysis.overallConsistency}
-                                </span>
-                            </div>
-                            <p className="lesson-plan-summary">{materialAnalysis.summary}</p>
-
-                            <div className="lesson-plan-details">
-                                <div className="lp-block matches">
-                                    <h4>✅ 자료와 일치한 부분</h4>
-                                    <ul>
-                                        {(materialAnalysis.matches || []).map((item, idx) => (<li key={idx}>{item}</li>))}
-                                    </ul>
-                                </div>
-
-                                {materialAnalysis.deviations && materialAnalysis.deviations.length > 0 && (
-                                    <div className="lp-block deviations">
-                                        <h4>⚠️ 자료와 다르게 진행된 부분</h4>
-                                        <ul>
-                                            {materialAnalysis.deviations.map((item, idx) => (<li key={idx}>{item}</li>))}
-                                        </ul>
-                                    </div>
-                                )}
-
-                                <div className="lp-block suggestions">
-                                    <h4>💡 자료 활용 개선 제안</h4>
-                                    <ul>
-                                        {(materialAnalysis.suggestions || []).map((item, idx) => (<li key={idx}>{item}</li>))}
-                                    </ul>
-                                </div>
-                            </div>
-                        </section>
-                    )}
-
-                    {conditionsAnalysis && conditionsAnalysis.length > 0 && (
-                        <section className="conditions-analysis-section">
-                            <div className="conditions-analysis-header">
-                                <span className="conditions-analysis-icon">🎯</span>
-                                <h3>조건 충족 분석</h3>
-                                <span className="conditions-count-badge">
-                                    {conditionsAnalysis.filter((c) => c.fulfilled).length}/{conditionsAnalysis.length} 충족
-                                </span>
-                            </div>
-                            <p className="conditions-analysis-desc">입력하신 조건들의 충족 여부를 분석한 결과입니다.</p>
-
-                            <div className="conditions-analysis-list">
-                                {conditionsAnalysis.map((item, idx) => (
-                                    <div key={idx} className={`condition-result-card ${item.fulfilled ? 'fulfilled' : 'unfulfilled'}`}>
-                                        <div className="condition-result-header">
-                                            <span className={`condition-status-icon ${item.fulfilled ? 'fulfilled' : 'unfulfilled'}`}>
-                                                {item.fulfilled ? '✓' : '✗'}
-                                            </span>
-                                            <span className="condition-text">{item.condition}</span>
-                                            {item.timestamp && (<span className="condition-timestamp">{item.timestamp}</span>)}
-                                        </div>
-                                        <p className="condition-evidence">{item.evidence}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    )}
                 </div>
             </div>
 
