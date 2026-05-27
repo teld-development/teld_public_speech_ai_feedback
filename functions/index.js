@@ -25,6 +25,7 @@ const MATERIAL_PROCESSING_MAX_WAIT_MS = 120000;
 const GCS_READ_SCOPES = [
   "https://www.googleapis.com/auth/devstorage.read_only",
   "https://www.googleapis.com/auth/cloud-platform",
+  "https://www.googleapis.com/auth/generative-language.retriever",
 ];
 
 function extractJSON(text) {
@@ -136,13 +137,13 @@ async function waitForActiveRegisteredFile(file, authContext, { maxWaitMs, label
   const startedAt = Date.now();
   let current = file;
 
-  while (current.state === "PROCESSING" && Date.now() - startedAt < maxWaitMs) {
+  while (current.state !== "ACTIVE" && Date.now() - startedAt < maxWaitMs) {
     await sleep(FILE_PROCESSING_POLL_MS);
     current = await fetchRegisteredFile(file.name, authContext, fallbackUri, fallbackMimeType);
     logger.info("[analysis] Waiting for registered file", {
       label,
       fileName: file.name,
-      state: current.state,
+      fileState: current.state || "STATE_UNSPECIFIED",
       elapsedMs: Date.now() - startedAt,
     });
   }
@@ -151,23 +152,23 @@ async function waitForActiveRegisteredFile(file, authContext, { maxWaitMs, label
     throw new Error(`${label} 파일 처리에 실패했습니다.`);
   }
 
-  if (current.state === "PROCESSING") {
+  if (current.state !== "ACTIVE") {
     const seconds = Math.round(maxWaitMs / 1000);
-    throw new Error(`${label} 파일 처리 시간이 ${seconds}초를 초과했습니다. 더 짧은 영상으로 다시 시도해주세요.`);
+    throw new Error(`${label} 파일이 ${seconds}초 안에 ACTIVE 상태가 되지 않았습니다. 현재 상태: ${current.state || "STATE_UNSPECIFIED"}`);
   }
 
   return current;
 }
 
-async function registerGcsFile(gcsUri, fallbackMimeType, { maxWaitMs, label }) {
-  const authContext = await getGoogleAuthContext();
+async function registerGcsFile(gcsUri, fallbackMimeType, { maxWaitMs, label, authContext }) {
+  const fileAuthContext = authContext || await getGoogleAuthContext();
 
   const response = await fetch(FILE_REGISTER_ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${authContext.accessToken}`,
-      "x-goog-user-project": authContext.projectId,
+      Authorization: `Bearer ${fileAuthContext.accessToken}`,
+      "x-goog-user-project": fileAuthContext.projectId,
     },
     body: JSON.stringify({ uris: [gcsUri] }),
   });
@@ -184,11 +185,11 @@ async function registerGcsFile(gcsUri, fallbackMimeType, { maxWaitMs, label }) {
   logger.info("[analysis] Registered file", {
     label,
     fileName: registeredFile.name,
-    state: registeredFile.state,
+    fileState: registeredFile.state || "STATE_UNSPECIFIED",
     mimeType: registeredFile.mimeType,
   });
 
-  return waitForActiveRegisteredFile(registeredFile, authContext, {
+  return waitForActiveRegisteredFile(registeredFile, fileAuthContext, {
     maxWaitMs,
     label,
     fallbackUri: gcsUri,
@@ -196,15 +197,23 @@ async function registerGcsFile(gcsUri, fallbackMimeType, { maxWaitMs, label }) {
   });
 }
 
-async function generateContent(apiKey, model, parts) {
+async function generateContent(apiKey, model, parts, authContext) {
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  if (authContext?.accessToken) {
+    headers.Authorization = `Bearer ${authContext.accessToken}`;
+    headers["x-goog-user-project"] = authContext.projectId;
+  } else {
+    headers["x-goog-api-key"] = apiKey;
+  }
+
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
+      headers,
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
       }),
@@ -232,7 +241,7 @@ function filePart(file) {
   };
 }
 
-async function analyzeCategory(apiKey, model, videoFile, category, meta) {
+async function analyzeCategory(apiKey, model, videoFile, category, meta, authContext) {
   const rubric = category.items
     .map((it) => `   - [${it.id}] ${it.label}: ${it.desc}`)
     .join("\n");
@@ -276,7 +285,7 @@ ${rubric}
 5. 구체적이고 건설적인 피드백을 작성하세요.
 6. 한국어로 응답하세요.`;
 
-  const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }]);
+  const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }], authContext);
   const parsed = JSON.parse(extractJSON(text).trim());
   return {
     timestamps: Array.isArray(parsed.timestamps) ? parsed.timestamps : [],
@@ -284,7 +293,7 @@ ${rubric}
   };
 }
 
-async function analyzeSummary(apiKey, model, videoFile, activeCategories, meta) {
+async function analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext) {
   const categoryLabels = activeCategories.map((c) => `${c.icon} ${c.label}`).join(", ");
   const rubric = activeCategories
     .map((category) => {
@@ -321,12 +330,12 @@ ${rubric}
 2. strengths와 suggestions는 가능하면 특정 하위 영역명을 언급해 작성하세요.
 3. 한국어로 응답하세요.`;
 
-  const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }]);
+  const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }], authContext);
   const parsed = JSON.parse(extractJSON(text).trim());
   return parsed.summary ?? { overall: "", strengths: [], suggestions: [] };
 }
 
-async function analyzeMaterial(apiKey, model, videoFile, materialFile) {
+async function analyzeMaterial(apiKey, model, videoFile, materialFile, authContext) {
   const prompt = `발표 자료(PDF)와 실제 발표 영상의 정합성을 분석해주세요.
 
 다음 JSON 형식으로만 응답하세요 (순수 JSON):
@@ -346,12 +355,12 @@ async function analyzeMaterial(apiKey, model, videoFile, materialFile) {
     filePart(videoFile),
     filePart(materialFile),
     { text: prompt },
-  ]);
+  ], authContext);
   const parsed = JSON.parse(extractJSON(text).trim());
   return parsed.materialAnalysis ?? null;
 }
 
-async function analyzeConditions(apiKey, model, videoFile, conditions) {
+async function analyzeConditions(apiKey, model, videoFile, conditions, authContext) {
   const conditionList = conditions.map((c, i) => `${i + 1}. ${c}`).join("\n");
   const prompt = `발표 영상에서 다음 조건들이 충족되었는지 판단해주세요.
 ${conditionList}
@@ -365,7 +374,7 @@ ${conditionList}
 
 한국어로 응답하세요.`;
 
-  const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }]);
+  const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }], authContext);
   const parsed = JSON.parse(extractJSON(text).trim());
   return Array.isArray(parsed.conditionsAnalysis) ? parsed.conditionsAnalysis : [];
 }
@@ -419,6 +428,8 @@ exports.analyzePresentationFromStorage = onCall(
     };
 
     try {
+      const authContext = await getGoogleAuthContext();
+
       assertStoragePathBelongsToUser(video.storagePath, uid, "영상");
       const videoGcsUri = makeGcsUri(video.bucket, video.storagePath);
 
@@ -438,6 +449,7 @@ exports.analyzePresentationFromStorage = onCall(
       const videoFile = await registerGcsFile(videoGcsUri, video.mimeType || "video/mp4", {
         maxWaitMs: VIDEO_PROCESSING_MAX_WAIT_MS,
         label: "영상",
+        authContext,
       });
 
       let materialFile = null;
@@ -448,10 +460,11 @@ exports.analyzePresentationFromStorage = onCall(
           materialFile = await registerGcsFile(materialGcsUri, material.mimeType || "application/pdf", {
             maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
             label: "발표 자료",
+            authContext,
           });
         } catch (error) {
           logger.warn("[analysis] Material registration failed; continuing without material", {
-            message: error.message,
+            errorMessage: error.message,
           });
         }
       }
@@ -474,29 +487,29 @@ exports.analyzePresentationFromStorage = onCall(
       });
 
       const categoryPromises = activeCategories.map((cat) =>
-        analyzeCategory(apiKey, model, videoFile, cat, meta).catch((error) => {
-          logger.error("[analysis] Category failed", { category: cat.id, message: error.message });
+        analyzeCategory(apiKey, model, videoFile, cat, meta, authContext).catch((error) => {
+          logger.error("[analysis] Category failed", { category: cat.id, errorMessage: error.message });
           return { timestamps: [], scores: {} };
         })
       );
 
-      const summaryPromise = analyzeSummary(apiKey, model, videoFile, activeCategories, meta)
+      const summaryPromise = analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext)
         .catch((error) => {
-          logger.error("[analysis] Summary failed", { message: error.message });
+          logger.error("[analysis] Summary failed", { errorMessage: error.message });
           return { overall: "", strengths: [], suggestions: [] };
         });
 
       const materialPromise = materialFile
-        ? analyzeMaterial(apiKey, model, videoFile, materialFile).catch((error) => {
-          logger.error("[analysis] Material analysis failed", { message: error.message });
+        ? analyzeMaterial(apiKey, model, videoFile, materialFile, authContext).catch((error) => {
+          logger.error("[analysis] Material analysis failed", { errorMessage: error.message });
           return null;
         })
         : Promise.resolve(null);
 
       const conditions = Array.isArray(data.conditions) ? data.conditions : [];
       const conditionsPromise = conditions.length > 0
-        ? analyzeConditions(apiKey, model, videoFile, conditions).catch((error) => {
-          logger.error("[analysis] Conditions analysis failed", { message: error.message });
+        ? analyzeConditions(apiKey, model, videoFile, conditions, authContext).catch((error) => {
+          logger.error("[analysis] Conditions analysis failed", { errorMessage: error.message });
           return [];
         })
         : Promise.resolve([]);
@@ -560,7 +573,7 @@ exports.analyzePresentationFromStorage = onCall(
         uid,
         presentationId,
         attemptId,
-        message: error.message,
+        errorMessage: error.message,
       });
       await failAttempt(uid, presentationId, attemptId, error.message, data.simulation ? { simulation: data.simulation } : {});
       if (error instanceof HttpsError) throw error;
