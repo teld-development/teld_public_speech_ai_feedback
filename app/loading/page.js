@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/AuthProvider";
+import { doc, getDoc } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
-import { storage } from "../lib/firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions, storage } from "../lib/firebase";
 import { completePresentationAttempt, failPresentationAttempt, markAttemptAnalyzing } from "../lib/presentations";
 import { readJsonResponse } from "../lib/httpResponse";
 
@@ -54,6 +56,15 @@ const ANALYSIS_STEPS = [
     { id: "analyze", label: "AI 분석 진행 중" },
     { id: "generate", label: "피드백 생성 중" },
 ];
+
+async function getAttemptAnalysisResult(user, presentationId, attemptId) {
+    if (!user?.uid || !presentationId || !attemptId) return null;
+    const attemptRef = doc(db, "users", user.uid, "presentations", presentationId, "attempts", attemptId);
+    const attemptSnap = await getDoc(attemptRef);
+    if (!attemptSnap.exists()) return null;
+    const attempt = attemptSnap.data();
+    return attempt.analysisResult || null;
+}
 
 export default function LoadingPage() {
     const router = useRouter();
@@ -249,37 +260,84 @@ export default function LoadingPage() {
                     }
                 }, 1000);
 
-                const analyzeResponse = await fetch("/api/analyze", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        blobUrl: blobResult.url,
-                        fileName: name,
-                        mimeType: type,
+                const storagePath = blobResult.storagePath || recordingUpload?.rawVideoPath || "";
+                const canUseStorageFunction = Boolean(functions && presentationId && attemptId && storagePath);
+                let analysisResult = null;
+                let analysisCompletedByFunction = false;
+
+                if (canUseStorageFunction) {
+                    const analyzeFromStorage = httpsCallable(functions, "analyzePresentationFromStorage", {
+                        timeout: 540000,
+                    });
+                    const callableResult = await analyzeFromStorage({
+                        presentationId,
+                        attemptId,
+                        video: {
+                            bucket: recordingUpload?.bucket || blobResult.bucket || "",
+                            storagePath,
+                            videoUrl: blobResult.url,
+                            fileName: blobResult.fileName || name,
+                            mimeType: blobResult.mimeType || type || "video/mp4",
+                        },
+                        material: prepareData.presentationMaterial?.path
+                            ? {
+                                bucket: recordingUpload?.bucket || blobResult.bucket || "",
+                                storagePath: prepareData.presentationMaterial.path,
+                                mimeType: prepareData.presentationMaterial.type || "application/pdf",
+                            }
+                            : null,
                         topic: prepareData.topic || "",
                         audience: prepareData.audience || "",
                         duration: prepareData.duration || "",
                         feedbackItems: prepareData.feedbackItems || [],
-                        materialUrl: materialUrl,
                         conditions: prepareData.conditions || [],
-                    }),
-                });
+                    });
+                    analysisResult = callableResult.data?.analysisResult || null;
+                    if (!analysisResult) {
+                        analysisResult = await getAttemptAnalysisResult(user, presentationId, attemptId);
+                    }
+                    analysisCompletedByFunction = true;
+                } else {
+                    const analyzeResponse = await fetch("/api/analyze", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            blobUrl: blobResult.url,
+                            fileName: name,
+                            mimeType: type,
+                            topic: prepareData.topic || "",
+                            audience: prepareData.audience || "",
+                            duration: prepareData.duration || "",
+                            feedbackItems: prepareData.feedbackItems || [],
+                            materialUrl: materialUrl,
+                            conditions: prepareData.conditions || [],
+                        }),
+                    });
+
+                    analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
+                    if (!analyzeResponse.ok) {
+                        throw new Error(analysisResult?.error || "분석에 실패했습니다.");
+                    }
+                }
 
                 clearInterval(progressInterval);
                 setProgress(90);
                 setCurrentStep(3);
-
-                const analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
-                if (!analyzeResponse.ok) {
-                    throw new Error(analysisResult?.error || "분석에 실패했습니다.");
-                }
                 console.log("[Loading] 분석 완료");
 
                 setProgress(95);
 
-                if (presentationId && attemptId) {
+                if (!analysisResult && presentationId && attemptId) {
+                    analysisResult = await getAttemptAnalysisResult(user, presentationId, attemptId);
+                }
+
+                if (!analysisResult) {
+                    throw new Error("분석은 완료되었지만 결과 데이터를 불러오지 못했습니다. 잠시 후 발표 기록에서 다시 확인해주세요.");
+                }
+
+                if (presentationId && attemptId && !analysisCompletedByFunction) {
                     await completePresentationAttempt(user, presentationId, attemptId, analysisResult, {
                         video: {
                             videoUrl: blobResult.url,

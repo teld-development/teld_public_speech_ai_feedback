@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, updateDoc } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
-import { db, storage } from "../../lib/firebase";
+import { db, functions, storage } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
 import { readJsonResponse } from "../../lib/httpResponse";
 import {
@@ -19,6 +20,15 @@ const STATUS_LABEL = {
     in_progress: "시뮬레이션 진행 중",
     completed: "AI 분석 진행 중",
 };
+
+async function getAttemptAnalysisResult(user, presentationId, attemptId) {
+    if (!user?.uid || !presentationId || !attemptId) return null;
+    const attemptRef = doc(db, "users", user.uid, "presentations", presentationId, "attempts", attemptId);
+    const attemptSnap = await getDoc(attemptRef);
+    if (!attemptSnap.exists()) return null;
+    const attempt = attemptSnap.data();
+    return attempt.analysisResult || null;
+}
 
 export default function SimulationWaitingPage({ params }) {
     const router = useRouter();
@@ -91,28 +101,75 @@ export default function SimulationWaitingPage({ params }) {
                                 });
                             }
 
-                            const analyzeResponse = await fetch("/api/analyze", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                    blobUrl: videoUrl,
-                                    fileName: unityRaw.fileName || `simulation_${code}.mp4`,
-                                    mimeType: unityRaw.mimeType || unityRaw.videoMimeType || "video/mp4",
+                            const canUseStorageFunction = Boolean(
+                                functions &&
+                                data.presentationId &&
+                                data.attemptId &&
+                                unityRaw.storagePath
+                            );
+                            let analysisResult = null;
+                            let analysisCompletedByFunction = false;
+
+                            if (canUseStorageFunction) {
+                                const analyzeFromStorage = httpsCallable(functions, "analyzePresentationFromStorage", {
+                                    timeout: 540000,
+                                });
+                                const callableResult = await analyzeFromStorage({
+                                    presentationId: data.presentationId,
+                                    attemptId: data.attemptId,
+                                    video: {
+                                        bucket: unityRaw.bucket || data.recordingUpload?.bucket || "",
+                                        storagePath: unityRaw.storagePath,
+                                        videoUrl,
+                                        fileName: unityRaw.fileName || `simulation_${code}.mp4`,
+                                        mimeType: unityRaw.mimeType || unityRaw.videoMimeType || "video/mp4",
+                                    },
+                                    material: data.presentationMaterial?.path
+                                        ? {
+                                            bucket: unityRaw.bucket || data.recordingUpload?.bucket || "",
+                                            storagePath: data.presentationMaterial.path,
+                                            mimeType: data.presentationMaterial.type || "application/pdf",
+                                        }
+                                        : null,
                                     topic: data.topic || "",
                                     audience: data.audience || "",
                                     duration: data.duration || "",
                                     feedbackItems: data.feedbackItems || [],
-                                    materialUrl: data.presentationMaterial?.url || data.simulation?.pdfUrl || null,
                                     conditions: data.conditions || [],
-                                }),
-                            });
+                                    simulation: {
+                                        code,
+                                        backendSessionId: data.backendSessionId || "",
+                                    },
+                                });
+                                analysisResult = callableResult.data?.analysisResult || null;
+                                if (!analysisResult) {
+                                    analysisResult = await getAttemptAnalysisResult(user, data.presentationId, data.attemptId);
+                                }
+                                analysisCompletedByFunction = true;
+                            } else {
+                                const analyzeResponse = await fetch("/api/analyze", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        blobUrl: videoUrl,
+                                        fileName: unityRaw.fileName || `simulation_${code}.mp4`,
+                                        mimeType: unityRaw.mimeType || unityRaw.videoMimeType || "video/mp4",
+                                        topic: data.topic || "",
+                                        audience: data.audience || "",
+                                        duration: data.duration || "",
+                                        feedbackItems: data.feedbackItems || [],
+                                        materialUrl: data.presentationMaterial?.url || data.simulation?.pdfUrl || null,
+                                        conditions: data.conditions || [],
+                                    }),
+                                });
 
-                            const analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
-                            if (!analyzeResponse.ok) {
-                                throw new Error(analysisResult?.error || "분석에 실패했습니다.");
+                                analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
+                                if (!analyzeResponse.ok) {
+                                    throw new Error(analysisResult?.error || "분석에 실패했습니다.");
+                                }
                             }
 
-                            if (data.presentationId && data.attemptId) {
+                            if (data.presentationId && data.attemptId && !analysisCompletedByFunction) {
                                 await completePresentationAttempt(user, data.presentationId, data.attemptId, analysisResult, {
                                     video: {
                                         videoUrl,
@@ -125,6 +182,14 @@ export default function SimulationWaitingPage({ params }) {
                                         backendSessionId: data.backendSessionId || "",
                                     },
                                 });
+                            }
+
+                            if (!analysisResult && data.presentationId && data.attemptId) {
+                                analysisResult = await getAttemptAnalysisResult(user, data.presentationId, data.attemptId);
+                            }
+
+                            if (!analysisResult) {
+                                throw new Error("분석은 완료되었지만 결과 데이터를 불러오지 못했습니다. 잠시 후 발표 기록에서 다시 확인해주세요.");
                             }
 
                             sessionStorage.setItem("analysisResult", JSON.stringify(analysisResult));

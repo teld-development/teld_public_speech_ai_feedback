@@ -2,6 +2,11 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
 import { del } from "@vercel/blob";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS } from "../../lib/feedbackAreas";
 
 export const maxDuration = 300;
@@ -43,6 +48,24 @@ async function waitForActiveFile(fileManager, fileName, { maxWaitMs, label }) {
     }
 
     return file;
+}
+
+async function streamUrlToTempFile(url, tempFilePath, label) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`${label}을(를) 가져오지 못했습니다.`);
+    }
+    if (!response.body) {
+        throw new Error(`${label} 응답 스트림을 사용할 수 없습니다.`);
+    }
+
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(tempFilePath));
+}
+
+function unlinkTempFile(tempFilePath) {
+    try {
+        fs.unlinkSync(tempFilePath);
+    } catch (_) { }
 }
 
 // ── 카테고리별 타임스탬프 + 항목별 점수 분석 ─────────────────────────────────
@@ -253,28 +276,21 @@ export async function POST(request) {
         const cleanApiKey = apiKey.trim();
 
         // ── 영상 다운로드 & Gemini 업로드 ────────────────────────────────────
-        const videoResponse = await fetch(blobUrl);
-        if (!videoResponse.ok) throw new Error("Blob에서 비디오를 가져오지 못했습니다.");
-        const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
-
         const fileManager = new GoogleAIFileManager(cleanApiKey);
-        const fs = await import("fs");
-        const path = await import("path");
-        const os = await import("os");
 
         const tempDir = os.tmpdir();
         const safeVideoFileName = safeTempFileName(fileName, "upload.mp4");
         const tempFilePath = path.join(tempDir, `upload_${Date.now()}_${safeVideoFileName}`);
-        fs.writeFileSync(tempFilePath, videoBuffer);
 
         let uploadResult;
         try {
+            await streamUrlToTempFile(blobUrl, tempFilePath, "Blob 비디오");
             uploadResult = await fileManager.uploadFile(tempFilePath, {
                 mimeType: mimeType || "video/mp4",
                 displayName: safeVideoFileName,
             });
         } finally {
-            fs.unlinkSync(tempFilePath);
+            unlinkTempFile(tempFilePath);
         }
 
         const file = await waitForActiveFile(fileManager, uploadResult.file.name, {
@@ -286,29 +302,25 @@ export async function POST(request) {
         let materialFile = null;
         if (materialUrl) {
             try {
-                const mRes = await fetch(materialUrl);
-                if (mRes.ok) {
-                    const mBuffer = Buffer.from(await mRes.arrayBuffer());
-                    const mFileName = safeTempFileName(materialUrl.split("/").pop(), "material.pdf");
-                    const materialTempPath = path.join(tempDir, `mat_${Date.now()}_${mFileName}`);
-                    fs.writeFileSync(materialTempPath, mBuffer);
+                const mFileName = safeTempFileName(materialUrl.split("/").pop(), "material.pdf");
+                const materialTempPath = path.join(tempDir, `mat_${Date.now()}_${mFileName}`);
 
-                    let mUpload;
-                    try {
-                        mUpload = await fileManager.uploadFile(materialTempPath, {
-                            mimeType: "application/pdf",
-                            displayName: mFileName,
-                        });
-                    } finally {
-                        fs.unlinkSync(materialTempPath);
-                    }
-
-                    materialFile = await waitForActiveFile(fileManager, mUpload.file.name, {
-                        maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
-                        label: "발표 자료",
+                let mUpload;
+                try {
+                    await streamUrlToTempFile(materialUrl, materialTempPath, "발표 자료");
+                    mUpload = await fileManager.uploadFile(materialTempPath, {
+                        mimeType: "application/pdf",
+                        displayName: mFileName,
                     });
-                    if (materialFile.state !== "ACTIVE") materialFile = null;
+                } finally {
+                    unlinkTempFile(materialTempPath);
                 }
+
+                materialFile = await waitForActiveFile(fileManager, mUpload.file.name, {
+                    maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
+                    label: "발표 자료",
+                });
+                if (materialFile.state !== "ACTIVE") materialFile = null;
             } catch (e) {
                 console.warn("[분석 API] 발표 자료 처리 오류:", e.message);
             }
