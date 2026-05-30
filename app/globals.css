@@ -4455,6 +4455,102 @@ a {
   min-height: 300px;
 }
 
+.transcript-section-v2 {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+}
+
+.transcript-scroll-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.transcript-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.transcript-scroll-container::-webkit-scrollbar-track {
+  background: var(--accent-subtle);
+  border-radius: 3px;
+}
+
+.transcript-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+.transcript-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 14px;
+  align-items: start;
+  text-align: left;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.transcript-row:hover {
+  border-color: #a5b4fc;
+  background: #f5f7ff;
+}
+
+.transcript-row.selected {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
+}
+
+.transcript-time {
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.transcript-text {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.transcript-error-message {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.transcript-error-message span {
+  display: block;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.transcript-error-message p {
+  color: #7c2d12;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+
 /* Detailed Feedback Section */
 .detailed-feedback-section {
   background: var(--surface);
@@ -11513,6 +11609,15 @@ a {
 }
 
 @media (max-width: 640px) {
+  .transcript-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .transcript-section-v2 {
+    padding: 18px;
+  }
+
   .feedback-demo-category-row {
     grid-template-columns: repeat(3, minmax(280px, 300px));
   }

@@ -87,7 +87,8 @@ export default function AnalysisPage() {
         });
     }, [selectedItemIds]);
 
-    const { timestamps = [], scores = {}, summary = {} } = analysisData || {};
+    const { timestamps = [], scores = {}, summary = {}, transcript = null } = analysisData || {};
+    const transcriptUtterances = Array.isArray(transcript?.utterances) ? transcript.utterances : [];
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -110,6 +111,28 @@ export default function AnalysisPage() {
             videoRef.current.currentTime = timestamp.seconds;
             videoRef.current.play();
         }
+    };
+
+    const handleTranscriptClick = (utterance, index) => {
+        const seconds = utterance.startSec ?? utterance.seconds ?? 0;
+        setSelectedTimestamp({ ...utterance, seconds, kind: "transcript", index });
+        if (videoRef.current) {
+            videoRef.current.currentTime = seconds;
+            videoRef.current.play();
+        }
+    };
+
+    const formatUtteranceRange = (utterance) => {
+        const start = utterance.time || formatSecondsForDisplay(utterance.startSec ?? 0);
+        if (utterance.endSec == null || utterance.endSec === utterance.startSec) return start;
+        return `${start} - ${formatSecondsForDisplay(utterance.endSec)}`;
+    };
+
+    const formatSecondsForDisplay = (seconds) => {
+        const safeSeconds = Math.max(0, Number(seconds) || 0);
+        const mins = Math.floor(safeSeconds / 60);
+        const secs = Math.floor(safeSeconds % 60);
+        return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
     };
 
     const parseTimeToSeconds = (timeStr) => {
@@ -271,6 +294,41 @@ export default function AnalysisPage() {
                 </section>
 
                 <div className="bottom-sections-wrapper">
+                    {(transcriptUtterances.length > 0 || transcript?.error) && (
+                        <section className="transcript-section-v2">
+                            <div className="timestamps-header">
+                                <h3>발화 기록</h3>
+                                <span className="timestamps-count">
+                                    {transcriptUtterances.length > 0 ? `${transcriptUtterances.length}개 발화` : "STT 미완료"}
+                                </span>
+                            </div>
+
+                            {transcript?.error ? (
+                                <div className="transcript-error-message">
+                                    <span>Chirp STT 처리 실패</span>
+                                    <p>{transcript.error}</p>
+                                </div>
+                            ) : (
+                                <div className="transcript-scroll-container">
+                                    {transcriptUtterances.map((utterance, index) => {
+                                        const isSelected = selectedTimestamp?.kind === "transcript" && selectedTimestamp?.index === index;
+                                        return (
+                                            <button
+                                                key={`${utterance.startSec || 0}-${index}`}
+                                                type="button"
+                                                className={`transcript-row ${isSelected ? "selected" : ""}`}
+                                                onClick={() => handleTranscriptClick(utterance, index)}
+                                            >
+                                                <span className="transcript-time">{formatUtteranceRange(utterance)}</span>
+                                                <span className="transcript-text">{utterance.text}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </section>
+                    )}
+
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="detailed-feedback-header">
                             <h3>영역별 상세 피드백</h3>

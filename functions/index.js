@@ -22,6 +22,11 @@ const FILE_REGISTER_ENDPOINT = `${FILE_API_BASE}/files:register`;
 const FILE_PROCESSING_POLL_MS = 3000;
 const VIDEO_PROCESSING_MAX_WAIT_MS = 300000;
 const MATERIAL_PROCESSING_MAX_WAIT_MS = 120000;
+const CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "us";
+const CHIRP_STT_MODEL = process.env.CHIRP_STT_MODEL || "chirp_3";
+const CHIRP_STT_LANGUAGE = process.env.CHIRP_STT_LANGUAGE || "ko-KR";
+const CHIRP_STT_POLL_MS = 5000;
+const CHIRP_STT_MAX_WAIT_MS = Number(process.env.CHIRP_STT_MAX_WAIT_MS || 180000);
 const GCS_READ_SCOPES = [
   "https://www.googleapis.com/auth/devstorage.read_only",
   "https://www.googleapis.com/auth/cloud-platform",
@@ -89,6 +94,31 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function formatSeconds(seconds) {
+  const safeSeconds = Math.max(0, Number(seconds) || 0);
+  const mins = Math.floor(safeSeconds / 60);
+  const secs = Math.floor(safeSeconds % 60);
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function parseDurationSeconds(value) {
+  if (typeof value === "number") return value;
+  if (!value || typeof value !== "string") return null;
+  const match = value.match(/^(-?\d+(?:\.\d+)?)s$/);
+  if (!match) return null;
+  return Number(match[1]);
+}
+
+function makeTranscriptDigest(transcript, maxChars = 6000) {
+  const utterances = transcript?.utterances || [];
+  if (!utterances.length) return "";
+  const lines = utterances.map((utt) => `[${utt.time}] ${utt.text}`).join("\n");
+  if (lines.length <= maxChars) return lines;
+  const head = lines.slice(0, Math.floor(maxChars * 0.7));
+  const tail = lines.slice(-Math.floor(maxChars * 0.25));
+  return `${head}\n... [발화록 중간 생략] ...\n${tail}`;
+}
+
 async function getGoogleAuthContext() {
   const auth = new GoogleAuth({ scopes: GCS_READ_SCOPES });
   const client = await auth.getClient();
@@ -101,6 +131,208 @@ async function getGoogleAuthContext() {
   }
 
   return { accessToken, projectId };
+}
+
+async function fetchSpeechOperation(operationName, authContext) {
+  const response = await fetch(`https://speech.googleapis.com/v2/${operationName}`, {
+    headers: {
+      Authorization: `Bearer ${authContext.accessToken}`,
+      "x-goog-user-project": authContext.projectId,
+    },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error?.message || `Speech operation 조회 실패: HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  return payload;
+}
+
+function normalizeSpeechResults(batchPayload, gcsUri) {
+  const fileResult = batchPayload?.results?.[gcsUri] || Object.values(batchPayload?.results || {})[0] || null;
+  const transcriptResults = fileResult?.transcript?.results || fileResult?.results || [];
+
+  const segments = transcriptResults
+    .map((result, index) => {
+      const alternative = result.alternatives?.[0] || {};
+      const words = Array.isArray(alternative.words)
+        ? alternative.words
+            .map((word) => ({
+              word: word.word || "",
+              startSec: parseDurationSeconds(word.startOffset),
+              endSec: parseDurationSeconds(word.endOffset),
+              speaker: word.speakerLabel || word.speakerTag || null,
+            }))
+            .filter((word) => word.word)
+        : [];
+
+      const startSec = words.find((word) => word.startSec != null)?.startSec
+        ?? (index === 0 ? 0 : null);
+      const endSec = [...words].reverse().find((word) => word.endSec != null)?.endSec
+        ?? parseDurationSeconds(result.resultEndOffset)
+        ?? startSec;
+
+      return {
+        text: alternative.transcript || "",
+        languageCode: result.languageCode || "",
+        startSec,
+        endSec,
+        words,
+      };
+    })
+    .filter((segment) => segment.text || segment.words.length);
+
+  return {
+    segments,
+    text: segments.map((segment) => segment.text).filter(Boolean).join("\n").trim(),
+  };
+}
+
+function wordsToUtterances(segments) {
+  const utterances = [];
+  let current = null;
+  const maxUtteranceSeconds = 18;
+  const pauseBreakSeconds = 1.1;
+
+  const flush = () => {
+    if (!current || !current.words.length) return;
+    const text = current.words.map((word) => word.word).join(" ").replace(/\s+([,.!?;:])/g, "$1").trim();
+    if (!text) {
+      current = null;
+      return;
+    }
+    const startSec = current.startSec ?? 0;
+    const endSec = current.endSec ?? startSec;
+    utterances.push({
+      startSec,
+      endSec,
+      time: formatSeconds(startSec),
+      speaker: current.speaker || null,
+      text,
+    });
+    current = null;
+  };
+
+  for (const segment of segments) {
+    if (!segment.words.length) continue;
+    for (const word of segment.words) {
+      const wordStart = word.startSec ?? current?.endSec ?? segment.startSec ?? 0;
+      const wordEnd = word.endSec ?? wordStart;
+      const lastEnd = current?.endSec ?? null;
+      const gap = lastEnd == null ? 0 : wordStart - lastEnd;
+      const elapsed = current ? wordEnd - current.startSec : 0;
+      const changedSpeaker = current?.speaker && word.speaker && current.speaker !== word.speaker;
+      const previousWord = current?.words[current.words.length - 1]?.word || "";
+      const sentenceEnded = /[.!?。？！]$/.test(previousWord);
+
+      if (current && (changedSpeaker || gap > pauseBreakSeconds || elapsed > maxUtteranceSeconds || (sentenceEnded && elapsed > 4))) {
+        flush();
+      }
+
+      if (!current) {
+        current = {
+          startSec: wordStart,
+          endSec: wordEnd,
+          speaker: word.speaker || null,
+          words: [],
+        };
+      }
+
+      current.words.push(word);
+      current.endSec = wordEnd;
+      if (!current.speaker && word.speaker) current.speaker = word.speaker;
+    }
+  }
+  flush();
+
+  if (utterances.length) return utterances;
+
+  return segments
+    .filter((segment) => segment.text)
+    .map((segment, index) => {
+      const startSec = segment.startSec ?? 0;
+      const endSec = segment.endSec ?? startSec;
+      return {
+        startSec,
+        endSec,
+        time: formatSeconds(startSec),
+        speaker: null,
+        text: segment.text,
+        index,
+      };
+    });
+}
+
+async function transcribeWithChirp(gcsUri, authContext) {
+  const recognizer = `projects/${authContext.projectId}/locations/${CHIRP_STT_LOCATION}/recognizers/_`;
+  const response = await fetch(
+    `https://speech.googleapis.com/v2/${recognizer}:batchRecognize`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authContext.accessToken}`,
+        "x-goog-user-project": authContext.projectId,
+      },
+      body: JSON.stringify({
+        config: {
+          autoDecodingConfig: {},
+          languageCodes: [CHIRP_STT_LANGUAGE],
+          model: CHIRP_STT_MODEL,
+          features: {
+            enableAutomaticPunctuation: true,
+            enableWordTimeOffsets: true,
+          },
+        },
+        configMask: "*",
+        files: [{ uri: gcsUri }],
+        recognitionOutputConfig: {
+          inlineResponseConfig: {},
+        },
+      }),
+    }
+  );
+
+  const operation = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = operation?.error?.message || `Speech-to-Text 요청 실패: HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  if (!operation.name) {
+    throw new Error("Speech-to-Text operation 이름을 확인하지 못했습니다.");
+  }
+
+  const startedAt = Date.now();
+  let current = operation;
+  while (!current.done && Date.now() - startedAt < CHIRP_STT_MAX_WAIT_MS) {
+    await sleep(CHIRP_STT_POLL_MS);
+    current = await fetchSpeechOperation(operation.name, authContext);
+    logger.info("[stt] Waiting for Chirp transcription", {
+      operation: operation.name,
+      elapsedMs: Date.now() - startedAt,
+    });
+  }
+
+  if (!current.done) {
+    throw new Error(`Chirp STT가 ${Math.round(CHIRP_STT_MAX_WAIT_MS / 1000)}초 안에 완료되지 않았습니다.`);
+  }
+  if (current.error) {
+    throw new Error(current.error.message || "Chirp STT operation이 실패했습니다.");
+  }
+
+  const normalized = normalizeSpeechResults(current.response, gcsUri);
+  const utterances = wordsToUtterances(normalized.segments);
+  return {
+    model: CHIRP_STT_MODEL,
+    languageCode: CHIRP_STT_LANGUAGE,
+    location: CHIRP_STT_LOCATION,
+    text: normalized.text || utterances.map((utterance) => utterance.text).join("\n").trim(),
+    utterances,
+    segmentCount: normalized.segments.length,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 function normalizeGeminiFile(file, fallbackUri, fallbackMimeType) {
@@ -241,7 +473,7 @@ function filePart(file) {
   };
 }
 
-async function analyzeCategory(apiKey, model, videoFile, category, meta, authContext) {
+async function analyzeCategory(apiKey, model, videoFile, category, meta, authContext, transcript = null) {
   const rubric = category.items
     .map((it) => `   - [${it.id}] ${it.label}: ${it.desc}`)
     .join("\n");
@@ -249,6 +481,13 @@ async function analyzeCategory(apiKey, model, videoFile, category, meta, authCon
   const scoreKeys = category.items.map((it) => `"${it.id}": 1~5 사이 정수`).join(", ");
   const minTs = Math.max(3, category.items.length);
   const maxTs = Math.max(minTs, 7);
+  const transcriptDigest = makeTranscriptDigest(transcript);
+  const transcriptBlock = transcriptDigest
+    ? `
+Chirp 3 STT 발화록:
+${transcriptDigest}
+`
+    : "";
 
   const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
 발표 영상에서 "${category.label}" (${category.shortLabel}) 영역만 집중 분석해주세요.
@@ -257,6 +496,7 @@ async function analyzeCategory(apiKey, model, videoFile, category, meta, authCon
 - 주제: ${meta.topic || "미지정"}
 - 청중: ${meta.audience || "미지정"}
 - 발표 시간: ${meta.duration || "미지정"}
+${transcriptBlock}
 
 이 영역의 평가 항목 ([id] 이름: 설명):
 ${rubric}
@@ -283,7 +523,8 @@ ${rubric}
 3. item 값은 위 항목명을 철자·공백·부호까지 완전히 동일하게 사용하세요. 영어나 약어를 사용하지 마세요.
 4. scores의 키는 반드시 위 대괄호 안의 id를 그대로 사용하고, 값은 1(매우 미흡)~5(매우 우수) 정수로 평가하세요.
 5. 구체적이고 건설적인 피드백을 작성하세요.
-6. 한국어로 응답하세요.`;
+6. Chirp 3 STT 발화록이 제공된 경우 내용·조직 관련 근거와 시간은 발화록을 우선 참고하세요. 단, 표현 영역은 영상의 음성·시선·자세도 함께 관찰하세요.
+7. 한국어로 응답하세요.`;
 
   const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }], authContext);
   const parsed = JSON.parse(extractJSON(text).trim());
@@ -293,7 +534,7 @@ ${rubric}
   };
 }
 
-async function analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext) {
+async function analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext, transcript = null) {
   const categoryLabels = activeCategories.map((c) => `${c.icon} ${c.label}`).join(", ");
   const rubric = activeCategories
     .map((category) => {
@@ -303,6 +544,13 @@ async function analyzeSummary(apiKey, model, videoFile, activeCategories, meta, 
       return `${category.label}\n${items}`;
     })
     .join("\n\n");
+  const transcriptDigest = makeTranscriptDigest(transcript, 8000);
+  const transcriptBlock = transcriptDigest
+    ? `
+Chirp 3 STT 발화록:
+${transcriptDigest}
+`
+    : "";
 
   const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
 발표 영상 전체를 종합 평가하고 요약 피드백을 제공해주세요.
@@ -312,6 +560,7 @@ async function analyzeSummary(apiKey, model, videoFile, activeCategories, meta, 
 - 청중: ${meta.audience || "미지정"}
 - 발표 시간: ${meta.duration || "미지정"}
 - 평가 영역: ${categoryLabels}
+${transcriptBlock}
 
 평가 기준:
 ${rubric}
@@ -328,7 +577,8 @@ ${rubric}
 주의사항:
 1. 위 평가 기준의 내용, 조직, 표현 영역을 모두 고려하세요.
 2. strengths와 suggestions는 가능하면 특정 하위 영역명을 언급해 작성하세요.
-3. 한국어로 응답하세요.`;
+3. Chirp 3 STT 발화록이 제공된 경우 발표 내용의 흐름과 표현의 언어적 근거를 함께 반영하세요.
+4. 한국어로 응답하세요.`;
 
   const text = await generateContent(apiKey, model, [filePart(videoFile), { text: prompt }], authContext);
   const parsed = JSON.parse(extractJSON(text).trim());
@@ -445,6 +695,22 @@ exports.analyzePresentationFromStorage = onCall(
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 
+      const transcriptPromise = process.env.ENABLE_CHIRP_STT === "false"
+        ? Promise.resolve(null)
+        : transcribeWithChirp(videoGcsUri, authContext).catch((error) => {
+          logger.warn("[stt] Chirp transcription failed; continuing without transcript", {
+            errorMessage: error.message,
+          });
+          return {
+            error: error.message,
+            model: CHIRP_STT_MODEL,
+            languageCode: CHIRP_STT_LANGUAGE,
+            location: CHIRP_STT_LOCATION,
+            text: "",
+            utterances: [],
+          };
+        });
+
       logger.info("[analysis] Registering video", { uid, presentationId, attemptId, videoGcsUri });
       const videoFile = await registerGcsFile(videoGcsUri, video.mimeType || "video/mp4", {
         maxWaitMs: VIDEO_PROCESSING_MAX_WAIT_MS,
@@ -480,20 +746,23 @@ exports.analyzePresentationFromStorage = onCall(
         }))
         .filter((cat) => cat.items.length > 0);
 
+      const transcript = await transcriptPromise;
+
       logger.info("[analysis] Starting Gemini analysis", {
         categoryCount: activeCategories.length,
         hasMaterial: Boolean(materialFile),
+        transcriptUtteranceCount: transcript?.utterances?.length || 0,
         conditionCount: Array.isArray(data.conditions) ? data.conditions.length : 0,
       });
 
       const categoryPromises = activeCategories.map((cat) =>
-        analyzeCategory(apiKey, model, videoFile, cat, meta, authContext).catch((error) => {
+        analyzeCategory(apiKey, model, videoFile, cat, meta, authContext, transcript).catch((error) => {
           logger.error("[analysis] Category failed", { category: cat.id, errorMessage: error.message });
           return { timestamps: [], scores: {} };
         })
       );
 
-      const summaryPromise = analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext)
+      const summaryPromise = analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext, transcript)
         .catch((error) => {
           logger.error("[analysis] Summary failed", { errorMessage: error.message });
           return { overall: "", strengths: [], suggestions: [] };
@@ -526,6 +795,7 @@ exports.analyzePresentationFromStorage = onCall(
         .sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0));
       const scores = Object.assign({}, ...categoryResults.map((result) => result.scores));
       const analysisResult = { timestamps: allTimestamps, scores, summary };
+      if (transcript) analysisResult.transcript = transcript;
       if (materialAnalysis) analysisResult.materialAnalysis = materialAnalysis;
       if (conditionsAnalysis.length > 0) analysisResult.conditionsAnalysis = conditionsAnalysis;
 
