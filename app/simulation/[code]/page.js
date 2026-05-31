@@ -160,6 +160,8 @@ export default function SimulationWaitingPage({ params }) {
                                         feedbackItems: data.feedbackItems || [],
                                         materialUrl: data.presentationMaterial?.url || data.simulation?.pdfUrl || null,
                                         conditions: data.conditions || [],
+                                        bucket: unityRaw.bucket || data.recordingUpload?.bucket || "",
+                                        storagePath: unityRaw.storagePath || "",
                                     }),
                                 });
 

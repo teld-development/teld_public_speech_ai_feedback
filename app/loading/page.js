@@ -313,6 +313,8 @@ export default function LoadingPage() {
                             feedbackItems: prepareData.feedbackItems || [],
                             materialUrl: materialUrl,
                             conditions: prepareData.conditions || [],
+                            bucket: recordingUpload?.bucket || blobResult.bucket || "",
+                            storagePath: blobResult.storagePath || recordingUpload?.rawVideoPath || "",
                         }),
                     });
 
