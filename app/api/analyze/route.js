@@ -1,7 +1,13 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
+import { GoogleAuth } from "google-auth-library";
 import { del } from "@vercel/blob";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS } from "../../lib/feedbackAreas";
 
 export const maxDuration = 300;
@@ -10,6 +16,12 @@ export const runtime = "nodejs";
 const FILE_PROCESSING_POLL_MS = 1500;
 const VIDEO_PROCESSING_MAX_WAIT_MS = 180000;
 const MATERIAL_PROCESSING_MAX_WAIT_MS = 45000;
+const CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "global";
+const CHIRP_STT_MODEL = process.env.CHIRP_STT_MODEL || "chirp_3";
+const CHIRP_STT_LANGUAGE = process.env.CHIRP_STT_LANGUAGE || "ko-KR";
+const CHIRP_STT_POLL_MS = 5000;
+const CHIRP_STT_MAX_WAIT_MS = Number(process.env.CHIRP_STT_MAX_WAIT_MS || 120000);
+const GOOGLE_AUTH_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"];
 
 // ── 유틸: JSON 추출 ──────────────────────────────────────────────────────────
 function extractJSON(text) {
@@ -45,8 +57,273 @@ async function waitForActiveFile(fileManager, fileName, { maxWaitMs, label }) {
     return file;
 }
 
+async function streamUrlToTempFile(url, tempFilePath, label) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`${label}을(를) 가져오지 못했습니다.`);
+    }
+    if (!response.body) {
+        throw new Error(`${label} 응답 스트림을 사용할 수 없습니다.`);
+    }
+
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(tempFilePath));
+}
+
+function unlinkTempFile(tempFilePath) {
+    try {
+        fs.unlinkSync(tempFilePath);
+    } catch (_) { }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function makeGcsUri(bucket, storagePath) {
+    const cleanBucket = String(bucket || "").replace(/^gs:\/\//, "").replace(/\/+$/, "");
+    const cleanPath = String(storagePath || "").replace(/^\/+/, "");
+    if (!cleanBucket || !cleanPath) return "";
+    return `gs://${cleanBucket}/${cleanPath}`;
+}
+
+function formatSeconds(seconds) {
+    const safeSeconds = Math.max(0, Number(seconds) || 0);
+    const mins = Math.floor(safeSeconds / 60);
+    const secs = Math.floor(safeSeconds % 60);
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function parseDurationSeconds(value) {
+    if (typeof value === "number") return value;
+    if (!value || typeof value !== "string") return null;
+    const match = value.match(/^(-?\d+(?:\.\d+)?)s$/);
+    if (!match) return null;
+    return Number(match[1]);
+}
+
+function makeTranscriptDigest(transcript, maxChars = 6000) {
+    const utterances = transcript?.utterances || [];
+    if (!utterances.length) return "";
+    const lines = utterances.map((utt) => `[${utt.time}] ${utt.text}`).join("\n");
+    if (lines.length <= maxChars) return lines;
+    const head = lines.slice(0, Math.floor(maxChars * 0.7));
+    const tail = lines.slice(-Math.floor(maxChars * 0.25));
+    return `${head}\n... [발화록 중간 생략] ...\n${tail}`;
+}
+
+async function getGoogleAuthContext() {
+    const auth = new GoogleAuth({ scopes: GOOGLE_AUTH_SCOPES });
+    const client = await auth.getClient();
+    const tokenResult = await client.getAccessToken();
+    const accessToken = typeof tokenResult === "string" ? tokenResult : tokenResult?.token;
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT || await auth.getProjectId();
+
+    if (!accessToken || !projectId) {
+        throw new Error("Google OAuth 인증 정보를 가져오지 못했습니다.");
+    }
+
+    return { accessToken, projectId };
+}
+
+async function fetchSpeechOperation(operationName, authContext) {
+    const response = await fetch(`https://speech.googleapis.com/v2/${operationName}`, {
+        headers: {
+            Authorization: `Bearer ${authContext.accessToken}`,
+            "x-goog-user-project": authContext.projectId,
+        },
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const message = payload?.error?.message || `Speech operation 조회 실패: HTTP ${response.status}`;
+        throw new Error(message);
+    }
+
+    return payload;
+}
+
+function normalizeSpeechResults(batchPayload, gcsUri) {
+    const fileResult = batchPayload?.results?.[gcsUri] || Object.values(batchPayload?.results || {})[0] || null;
+    const transcriptResults = fileResult?.transcript?.results || fileResult?.results || [];
+
+    const segments = transcriptResults
+        .map((result, index) => {
+            const alternative = result.alternatives?.[0] || {};
+            const words = Array.isArray(alternative.words)
+                ? alternative.words
+                    .map((word) => ({
+                        word: word.word || "",
+                        startSec: parseDurationSeconds(word.startOffset),
+                        endSec: parseDurationSeconds(word.endOffset),
+                        speaker: word.speakerLabel || word.speakerTag || null,
+                    }))
+                    .filter((word) => word.word)
+                : [];
+
+            const startSec = words.find((word) => word.startSec != null)?.startSec
+                ?? (index === 0 ? 0 : null);
+            const endSec = [...words].reverse().find((word) => word.endSec != null)?.endSec
+                ?? parseDurationSeconds(result.resultEndOffset)
+                ?? startSec;
+
+            return {
+                text: alternative.transcript || "",
+                languageCode: result.languageCode || "",
+                startSec,
+                endSec,
+                words,
+            };
+        })
+        .filter((segment) => segment.text || segment.words.length);
+
+    return {
+        segments,
+        text: segments.map((segment) => segment.text).filter(Boolean).join("\n").trim(),
+    };
+}
+
+function wordsToUtterances(segments) {
+    const utterances = [];
+    let current = null;
+    const maxUtteranceSeconds = 18;
+    const pauseBreakSeconds = 1.1;
+
+    const flush = () => {
+        if (!current || !current.words.length) return;
+        const text = current.words.map((word) => word.word).join(" ").replace(/\s+([,.!?;:])/g, "$1").trim();
+        if (!text) {
+            current = null;
+            return;
+        }
+        const startSec = current.startSec ?? 0;
+        const endSec = current.endSec ?? startSec;
+        utterances.push({
+            startSec,
+            endSec,
+            time: formatSeconds(startSec),
+            speaker: current.speaker || null,
+            text,
+        });
+        current = null;
+    };
+
+    for (const segment of segments) {
+        if (!segment.words.length) continue;
+        for (const word of segment.words) {
+            const wordStart = word.startSec ?? current?.endSec ?? segment.startSec ?? 0;
+            const wordEnd = word.endSec ?? wordStart;
+            const lastEnd = current?.endSec ?? null;
+            const gap = lastEnd == null ? 0 : wordStart - lastEnd;
+            const elapsed = current ? wordEnd - current.startSec : 0;
+            const changedSpeaker = current?.speaker && word.speaker && current.speaker !== word.speaker;
+            const previousWord = current?.words[current.words.length - 1]?.word || "";
+            const sentenceEnded = /[.!?。？！]$/.test(previousWord);
+
+            if (current && (changedSpeaker || gap > pauseBreakSeconds || elapsed > maxUtteranceSeconds || (sentenceEnded && elapsed > 4))) {
+                flush();
+            }
+
+            if (!current) {
+                current = {
+                    startSec: wordStart,
+                    endSec: wordEnd,
+                    speaker: word.speaker || null,
+                    words: [],
+                };
+            }
+
+            current.words.push(word);
+            current.endSec = wordEnd;
+            if (!current.speaker && word.speaker) current.speaker = word.speaker;
+        }
+    }
+    flush();
+
+    if (utterances.length) return utterances;
+
+    return segments
+        .filter((segment) => segment.text)
+        .map((segment, index) => {
+            const startSec = segment.startSec ?? 0;
+            const endSec = segment.endSec ?? startSec;
+            return {
+                startSec,
+                endSec,
+                time: formatSeconds(startSec),
+                speaker: null,
+                text: segment.text,
+                index,
+            };
+        });
+}
+
+async function transcribeWithChirp(gcsUri) {
+    const authContext = await getGoogleAuthContext();
+    const recognizer = `projects/${authContext.projectId}/locations/${CHIRP_STT_LOCATION}/recognizers/_`;
+    const response = await fetch(`https://speech.googleapis.com/v2/${recognizer}:batchRecognize`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authContext.accessToken}`,
+            "x-goog-user-project": authContext.projectId,
+        },
+        body: JSON.stringify({
+            config: {
+                autoDecodingConfig: {},
+                languageCodes: [CHIRP_STT_LANGUAGE],
+                model: CHIRP_STT_MODEL,
+                features: {
+                    enableAutomaticPunctuation: true,
+                    enableWordTimeOffsets: true,
+                },
+            },
+            configMask: "*",
+            files: [{ uri: gcsUri }],
+            recognitionOutputConfig: {
+                inlineResponseConfig: {},
+            },
+        }),
+    });
+
+    const operation = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const message = operation?.error?.message || `Speech-to-Text 요청 실패: HTTP ${response.status}`;
+        throw new Error(message);
+    }
+    if (!operation.name) {
+        throw new Error("Speech-to-Text operation 이름을 확인하지 못했습니다.");
+    }
+
+    const startedAt = Date.now();
+    let current = operation;
+    while (!current.done && Date.now() - startedAt < CHIRP_STT_MAX_WAIT_MS) {
+        await sleep(CHIRP_STT_POLL_MS);
+        current = await fetchSpeechOperation(operation.name, authContext);
+        console.log("[분석 API] Chirp STT 대기 중:", operation.name);
+    }
+
+    if (!current.done) {
+        throw new Error(`Chirp STT가 ${Math.round(CHIRP_STT_MAX_WAIT_MS / 1000)}초 안에 완료되지 않았습니다.`);
+    }
+    if (current.error) {
+        throw new Error(current.error.message || "Chirp STT operation이 실패했습니다.");
+    }
+
+    const normalized = normalizeSpeechResults(current.response, gcsUri);
+    const utterances = wordsToUtterances(normalized.segments);
+    return {
+        model: CHIRP_STT_MODEL,
+        languageCode: CHIRP_STT_LANGUAGE,
+        location: CHIRP_STT_LOCATION,
+        text: normalized.text || utterances.map((utterance) => utterance.text).join("\n").trim(),
+        utterances,
+        segmentCount: normalized.segments.length,
+        createdAt: new Date().toISOString(),
+    };
+}
+
 // ── 카테고리별 타임스탬프 + 항목별 점수 분석 ─────────────────────────────────
-async function analyzeCategory(model, fileUri, fileMimeType, category, { topic, audience, duration }) {
+async function analyzeCategory(model, fileUri, fileMimeType, category, { topic, audience, duration }, transcript = null) {
     // 항목별 id를 프롬프트에 명시해 모델이 scores 키로 직접 사용하게 함
     const rubric = category.items
         .map((it) => `   - [${it.id}] ${it.label}: ${it.desc}`)
@@ -55,6 +332,13 @@ async function analyzeCategory(model, fileUri, fileMimeType, category, { topic, 
     const scoreKeys = category.items.map((it) => `"${it.id}": 1~5 사이 정수`).join(", ");
     const minTs = Math.max(3, category.items.length);
     const maxTs = Math.max(minTs, 7);
+    const transcriptDigest = makeTranscriptDigest(transcript);
+    const transcriptBlock = transcriptDigest
+        ? `
+Chirp 3 STT 발화록:
+${transcriptDigest}
+`
+        : "";
 
     const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
 발표 영상에서 "${category.label}" (${category.shortLabel}) 영역만 집중 분석해주세요.
@@ -63,6 +347,7 @@ async function analyzeCategory(model, fileUri, fileMimeType, category, { topic, 
 - 주제: ${topic || "미지정"}
 - 청중: ${audience || "미지정"}
 - 발표 시간: ${duration || "미지정"}
+${transcriptBlock}
 
 이 영역의 평가 항목 ([id] 이름: 설명):
 ${rubric}
@@ -89,7 +374,8 @@ ${rubric}
 3. item 값은 위 항목명을 철자·공백·부호까지 완전히 동일하게 사용하세요. 영어나 약어를 사용하지 마세요.
 4. scores의 키는 반드시 위 대괄호 안의 id를 그대로 사용하고, 값은 1(매우 미흡)~5(매우 우수) 정수로 평가하세요.
 5. 구체적이고 건설적인 피드백을 작성하세요.
-6. 한국어로 응답하세요.`;
+6. Chirp 3 STT 발화록이 제공된 경우 내용·조직 관련 근거와 시간은 발화록을 우선 참고하세요. 단, 표현 영역은 영상의 음성·시선·자세도 함께 관찰하세요.
+7. 한국어로 응답하세요.`;
 
     const message = new HumanMessage({
         content: [
@@ -110,7 +396,7 @@ ${rubric}
 }
 
 // ── 종합 요약 분석 ─────────────────────────────────────────────────────────────
-async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { topic, audience, duration }) {
+async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { topic, audience, duration }, transcript = null) {
     const categoryLabels = activeCategories.map((c) => `${c.icon} ${c.label}`).join(", ");
     const rubric = activeCategories
         .map((category) => {
@@ -120,6 +406,13 @@ async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { 
             return `${category.label}\n${items}`;
         })
         .join("\n\n");
+    const transcriptDigest = makeTranscriptDigest(transcript, 8000);
+    const transcriptBlock = transcriptDigest
+        ? `
+Chirp 3 STT 발화록:
+${transcriptDigest}
+`
+        : "";
 
     const prompt = `당신은 발표(프레젠테이션) 분석 전문가입니다.
 발표 영상 전체를 종합 평가하고 요약 피드백을 제공해주세요.
@@ -129,6 +422,7 @@ async function analyzeSummary(model, fileUri, fileMimeType, activeCategories, { 
 - 청중: ${audience || "미지정"}
 - 발표 시간: ${duration || "미지정"}
 - 평가 영역: ${categoryLabels}
+${transcriptBlock}
 
 평가 기준:
 ${rubric}
@@ -145,7 +439,8 @@ ${rubric}
 주의사항:
 1. 위 평가 기준의 내용, 조직, 표현 영역을 모두 고려하세요.
 2. strengths와 suggestions는 가능하면 특정 하위 영역명을 언급해 작성하세요.
-3. 한국어로 응답하세요.`;
+3. Chirp 3 STT 발화록이 제공된 경우 발표 내용의 흐름과 표현의 언어적 근거를 함께 반영하세요.
+4. 한국어로 응답하세요.`;
 
     const message = new HumanMessage({
         content: [
@@ -238,6 +533,8 @@ export async function POST(request) {
             feedbackItems = [],
             materialUrl = null,
             conditions = [],
+            bucket = "",
+            storagePath = "",
         } = body;
 
         blobUrl = videoUrl;
@@ -252,29 +549,37 @@ export async function POST(request) {
         }
         const cleanApiKey = apiKey.trim();
 
-        // ── 영상 다운로드 & Gemini 업로드 ────────────────────────────────────
-        const videoResponse = await fetch(blobUrl);
-        if (!videoResponse.ok) throw new Error("Blob에서 비디오를 가져오지 못했습니다.");
-        const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
+        const videoGcsUri = makeGcsUri(bucket, storagePath);
+        const transcriptPromise = videoGcsUri && process.env.ENABLE_CHIRP_STT !== "false"
+            ? transcribeWithChirp(videoGcsUri).catch((e) => {
+                console.warn("[분석 API] Chirp STT 실패, 발화록 없이 계속 진행:", e.message);
+                return {
+                    error: e.message,
+                    model: CHIRP_STT_MODEL,
+                    languageCode: CHIRP_STT_LANGUAGE,
+                    location: CHIRP_STT_LOCATION,
+                    text: "",
+                    utterances: [],
+                };
+            })
+            : Promise.resolve(null);
 
+        // ── 영상 다운로드 & Gemini 업로드 ────────────────────────────────────
         const fileManager = new GoogleAIFileManager(cleanApiKey);
-        const fs = await import("fs");
-        const path = await import("path");
-        const os = await import("os");
 
         const tempDir = os.tmpdir();
         const safeVideoFileName = safeTempFileName(fileName, "upload.mp4");
         const tempFilePath = path.join(tempDir, `upload_${Date.now()}_${safeVideoFileName}`);
-        fs.writeFileSync(tempFilePath, videoBuffer);
 
         let uploadResult;
         try {
+            await streamUrlToTempFile(blobUrl, tempFilePath, "Blob 비디오");
             uploadResult = await fileManager.uploadFile(tempFilePath, {
                 mimeType: mimeType || "video/mp4",
                 displayName: safeVideoFileName,
             });
         } finally {
-            fs.unlinkSync(tempFilePath);
+            unlinkTempFile(tempFilePath);
         }
 
         const file = await waitForActiveFile(fileManager, uploadResult.file.name, {
@@ -286,29 +591,25 @@ export async function POST(request) {
         let materialFile = null;
         if (materialUrl) {
             try {
-                const mRes = await fetch(materialUrl);
-                if (mRes.ok) {
-                    const mBuffer = Buffer.from(await mRes.arrayBuffer());
-                    const mFileName = safeTempFileName(materialUrl.split("/").pop(), "material.pdf");
-                    const materialTempPath = path.join(tempDir, `mat_${Date.now()}_${mFileName}`);
-                    fs.writeFileSync(materialTempPath, mBuffer);
+                const mFileName = safeTempFileName(materialUrl.split("/").pop(), "material.pdf");
+                const materialTempPath = path.join(tempDir, `mat_${Date.now()}_${mFileName}`);
 
-                    let mUpload;
-                    try {
-                        mUpload = await fileManager.uploadFile(materialTempPath, {
-                            mimeType: "application/pdf",
-                            displayName: mFileName,
-                        });
-                    } finally {
-                        fs.unlinkSync(materialTempPath);
-                    }
-
-                    materialFile = await waitForActiveFile(fileManager, mUpload.file.name, {
-                        maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
-                        label: "발표 자료",
+                let mUpload;
+                try {
+                    await streamUrlToTempFile(materialUrl, materialTempPath, "발표 자료");
+                    mUpload = await fileManager.uploadFile(materialTempPath, {
+                        mimeType: "application/pdf",
+                        displayName: mFileName,
                     });
-                    if (materialFile.state !== "ACTIVE") materialFile = null;
+                } finally {
+                    unlinkTempFile(materialTempPath);
                 }
+
+                materialFile = await waitForActiveFile(fileManager, mUpload.file.name, {
+                    maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
+                    label: "발표 자료",
+                });
+                if (materialFile.state !== "ACTIVE") materialFile = null;
             } catch (e) {
                 console.warn("[분석 API] 발표 자료 처리 오류:", e.message);
             }
@@ -333,12 +634,15 @@ export async function POST(request) {
             .filter((cat) => cat.items.length > 0);
 
         const meta = { topic, audience, duration };
+        const transcript = await transcriptPromise;
 
         // ── 카테고리별 + 요약 + 선택 분석을 모두 병렬 실행 ──────────────────
-        console.log(`[분석 API] ${activeCategories.length}개 카테고리 + 요약 병렬 분석 시작`);
+        console.log(`[분석 API] ${activeCategories.length}개 카테고리 + 요약 병렬 분석 시작`, {
+            transcriptUtteranceCount: transcript?.utterances?.length || 0,
+        });
 
         const categoryPromises = activeCategories.map((cat) =>
-            analyzeCategory(model, file.uri, file.mimeType, cat, meta)
+            analyzeCategory(model, file.uri, file.mimeType, cat, meta, transcript)
                 .then((result) => {
                     console.log(`[분석 API] '${cat.label}' 완료 (${result.timestamps.length}개 타임스탬프)`);
                     return result;
@@ -349,7 +653,7 @@ export async function POST(request) {
                 })
         );
 
-        const summaryPromise = analyzeSummary(model, file.uri, file.mimeType, activeCategories, meta)
+        const summaryPromise = analyzeSummary(model, file.uri, file.mimeType, activeCategories, meta, transcript)
             .then((s) => { console.log("[분석 API] 요약 완료"); return s; })
             .catch((e) => { console.error("[분석 API] 요약 실패:", e.message); return { overall: "", strengths: [], suggestions: [] }; });
 
@@ -382,6 +686,7 @@ export async function POST(request) {
         const scores = Object.assign({}, ...categoryResults.map((r) => r.scores));
 
         const analysisResult = { timestamps: allTimestamps, scores, summary };
+        if (transcript) analysisResult.transcript = transcript;
         if (materialAnalysis) analysisResult.materialAnalysis = materialAnalysis;
         if (conditionsAnalysis.length > 0) analysisResult.conditionsAnalysis = conditionsAnalysis;
 

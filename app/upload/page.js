@@ -8,40 +8,13 @@ import { storage } from "../lib/firebase";
 import {
     buildRecordingUpload,
     createPresentationAttempt,
+    createPresentationSession,
     deletePresentationAttempt,
+    deletePresentationSession,
     failPresentationAttempt,
     getPresentationSession,
     markAttemptAnalyzing,
 } from "../lib/presentations";
-
-// IndexedDB 유틸리티
-const DB_NAME = "VideoAnalysisDB";
-const STORE_NAME = "pendingVideos";
-
-const openDB = () => {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME);
-            }
-        };
-    });
-};
-
-const saveVideoDB = async (key, data) => {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, "readwrite");
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(data, key);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve();
-    });
-};
 
 function UploadPageContent() {
     const router = useRouter();
@@ -154,17 +127,39 @@ function UploadPageContent() {
 
         let attempt = null;
         let createdAttemptPresentationId = null;
+        let createdStandalonePresentationId = null;
         let uploadedStoragePath = null;
 
         try {
             let recordingUpload = null;
 
-            if (presentationId) {
-                createdAttemptPresentationId = presentationId;
-                attempt = await createPresentationAttempt(user, presentationId, "upload");
+            {
+                let targetPresentationId = presentationId;
+                let targetPrepareData = prepareData;
+
+                if (!targetPresentationId) {
+                    const presentationRef = await createPresentationSession(user, {
+                        title: prepareData.topic?.trim() || videoFile.name || "발표",
+                        topic: prepareData.topic || "",
+                        audience: prepareData.audience || "",
+                        dday: prepareData.dday || "",
+                        duration: prepareData.duration || "",
+                        presentationType: prepareData.presentationType || "",
+                        presentationMaterial: prepareData.presentationMaterial || null,
+                    });
+                    targetPresentationId = presentationRef.id;
+                    createdStandalonePresentationId = targetPresentationId;
+                    targetPrepareData = {
+                        ...prepareData,
+                        presentationId: targetPresentationId,
+                    };
+                }
+
+                createdAttemptPresentationId = targetPresentationId;
+                attempt = await createPresentationAttempt(user, targetPresentationId, "upload");
                 recordingUpload = buildRecordingUpload({
                     ownerUid: user.uid,
-                    presentationId,
+                    presentationId: targetPresentationId,
                     attemptId: attempt.id,
                     sourceType: "upload",
                     fileName: videoFile.name || `upload_${attempt.id}.mp4`,
@@ -178,7 +173,7 @@ function UploadPageContent() {
                         contentType: videoFile.type || recordingUpload.mimeType || "video/mp4",
                         customMetadata: {
                             ownerUid: user.uid,
-                            presentationId,
+                            presentationId: targetPresentationId,
                             attemptId: attempt.id,
                             sourceType: "upload",
                         },
@@ -207,7 +202,7 @@ function UploadPageContent() {
                     );
                 });
 
-                await markAttemptAnalyzing(user, presentationId, attempt.id, {
+                await markAttemptAnalyzing(user, targetPresentationId, attempt.id, {
                     video: {
                         videoUrl: uploadResult.url,
                         storagePath: uploadResult.storagePath,
@@ -220,49 +215,24 @@ function UploadPageContent() {
                     blobResult: uploadResult,
                     name: videoFile.name,
                     type: videoFile.type || "video/mp4",
-                    presentationId,
+                    presentationId: targetPresentationId,
                     attemptId: attempt.id,
                     attemptNo: attempt.attemptNo,
                     recordingUpload,
                     prepareData: {
-                        ...prepareData,
-                        presentationId,
+                        ...targetPrepareData,
+                        presentationId: targetPresentationId,
                         attemptId: attempt.id,
                         attemptNo: attempt.attemptNo,
                         recordingUpload,
-                        ownerUid: prepareData.ownerUid || user.uid,
-                        ownerEmail: prepareData.ownerEmail || user.email || "",
+                        ownerUid: targetPrepareData.ownerUid || user.uid,
+                        ownerEmail: targetPrepareData.ownerEmail || user.email || "",
                     },
                 }));
 
                 router.push("/loading");
                 return;
             }
-
-            // 비디오 파일을 ArrayBuffer로 변환하여 IndexedDB에 저장
-            const arrayBuffer = await videoFile.arrayBuffer();
-
-            await saveVideoDB("pendingVideo", {
-                buffer: arrayBuffer,
-                name: videoFile.name,
-                type: videoFile.type,
-                presentationId: presentationId || null,
-                attemptId: attempt?.id || null,
-                attemptNo: attempt?.attemptNo || null,
-                recordingUpload,
-                prepareData: {
-                    ...prepareData,
-                    presentationId: presentationId || prepareData.presentationId || null,
-                    attemptId: attempt?.id || null,
-                    attemptNo: attempt?.attemptNo || null,
-                    recordingUpload,
-                    ownerUid: prepareData.ownerUid || user.uid,
-                    ownerEmail: prepareData.ownerEmail || user.email || "",
-                }
-            });
-
-            // 로딩 페이지로 이동
-            router.push("/loading");
 
         } catch (err) {
             console.error("업로드 오류:", err);
@@ -288,6 +258,13 @@ function UploadPageContent() {
                     } catch (failErr) {
                         console.warn("[Upload] 실패한 업로드 회차 상태 저장 실패:", failErr);
                     }
+                }
+            }
+            if (createdStandalonePresentationId) {
+                try {
+                    await deletePresentationSession(user, createdStandalonePresentationId);
+                } catch (cleanupErr) {
+                    console.warn("[Upload] 실패한 단독 업로드 세션 삭제 실패:", cleanupErr);
                 }
             }
             setError(err.message || "영상 업로드 중 오류가 발생했습니다.");
@@ -417,7 +394,7 @@ function UploadPageContent() {
                         disabled={!videoFile || uploading}
                         onClick={handleUpload}
                     >
-                        {uploading ? (presentationId ? `업로드 중 ${uploadProgress}%` : "준비 중...") : "분석 시작하기"}
+                        {uploading ? `업로드 중 ${uploadProgress}%` : "분석 시작하기"}
                     </button>
                 </div>
             </div>
