@@ -138,6 +138,7 @@ export default function AnalysisPage() {
     const [savedReflectionNote, setSavedReflectionNote] = useState("");
     const [savingReflection, setSavingReflection] = useState(false);
     const [reflectionStatus, setReflectionStatus] = useState("");
+    const [summaryModal, setSummaryModal] = useState(null);
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -467,21 +468,50 @@ export default function AnalysisPage() {
                         <p className="summary-overall">{summary.overall}</p>
 
                         <div className="summary-lists">
-                            <div className="summary-block strengths">
-                                <h4>강점</h4>
-                                <ul>
-                                    {(summary.strengths || []).map((item, idx) => (<li key={idx}>{item}</li>))}
-                                </ul>
-                            </div>
-                            <div className="summary-block suggestions">
-                                <h4>개선 제안</h4>
-                                <ul>
-                                    {(summary.suggestions || []).map((item, idx) => (<li key={idx}>{item}</li>))}
-                                </ul>
-                            </div>
+                            <button
+                                type="button"
+                                className="summary-block summary-card-trigger strengths"
+                                onClick={() => setSummaryModal({ title: "강점", tone: "strengths", items: summary.strengths || [] })}
+                            >
+                                <span>강점</span>
+                                <strong>{(summary.strengths || []).length}개</strong>
+                                <small>{(summary.strengths || [])[0] || "강점 상세 보기"}</small>
+                            </button>
+                            <button
+                                type="button"
+                                className="summary-block summary-card-trigger suggestions"
+                                onClick={() => setSummaryModal({ title: "개선 제안", tone: "suggestions", items: summary.suggestions || [] })}
+                            >
+                                <span>개선 제안</span>
+                                <strong>{(summary.suggestions || []).length}개</strong>
+                                <small>{(summary.suggestions || [])[0] || "개선 제안 상세 보기"}</small>
+                            </button>
                         </div>
                     </div>
                 </section>
+
+                {summaryModal && (
+                    <div className="summary-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setSummaryModal(null);
+                    }}>
+                        <section className={`summary-modal summary-modal-${summaryModal.tone}`} role="dialog" aria-modal="true" aria-labelledby="summary-modal-title">
+                            <header>
+                                <div>
+                                    <span>종합 피드백</span>
+                                    <h2 id="summary-modal-title">{summaryModal.title}</h2>
+                                </div>
+                                <button type="button" onClick={() => setSummaryModal(null)} aria-label="닫기">×</button>
+                            </header>
+                            <ul>
+                                {summaryModal.items.length > 0 ? (
+                                    summaryModal.items.map((item, index) => <li key={index}>{item}</li>)
+                                ) : (
+                                    <li>표시할 내용이 없습니다.</li>
+                                )}
+                            </ul>
+                        </section>
+                    </div>
+                )}
 
                 <section className="reflection-note-section">
                     <div className="reflection-note-copy">

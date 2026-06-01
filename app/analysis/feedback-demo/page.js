@@ -113,6 +113,7 @@ export default function FeedbackDemoPage() {
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatInput, setChatInput] = useState("");
     const [demoReflectionNote, setDemoReflectionNote] = useState("결론에서 핵심 문장을 더 또렷하게 정리해야겠다. 다음 연습에서는 마지막 30초를 따로 반복해보기.");
+    const [summaryModal, setSummaryModal] = useState(null);
 
     const totalFeedbackCount = useMemo(
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
@@ -163,25 +164,46 @@ export default function FeedbackDemoPage() {
                         <p className="summary-overall">{DUMMY_SUMMARY.overall}</p>
 
                         <div className="summary-lists">
-                            <div className="summary-block strengths">
-                                <h4>강점</h4>
-                                <ul>
-                                    {DUMMY_SUMMARY.strengths.map((item, index) => (
-                                        <li key={index}>{item}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                            <div className="summary-block suggestions">
-                                <h4>개선 제안</h4>
-                                <ul>
-                                    {DUMMY_SUMMARY.suggestions.map((item, index) => (
-                                        <li key={index}>{item}</li>
-                                    ))}
-                                </ul>
-                            </div>
+                            <button
+                                type="button"
+                                className="summary-block summary-card-trigger strengths"
+                                onClick={() => setSummaryModal({ title: "강점", tone: "strengths", items: DUMMY_SUMMARY.strengths })}
+                            >
+                                <span>강점</span>
+                                <strong>{DUMMY_SUMMARY.strengths.length}개</strong>
+                                <small>{DUMMY_SUMMARY.strengths[0]}</small>
+                            </button>
+                            <button
+                                type="button"
+                                className="summary-block summary-card-trigger suggestions"
+                                onClick={() => setSummaryModal({ title: "개선 제안", tone: "suggestions", items: DUMMY_SUMMARY.suggestions })}
+                            >
+                                <span>개선 제안</span>
+                                <strong>{DUMMY_SUMMARY.suggestions.length}개</strong>
+                                <small>{DUMMY_SUMMARY.suggestions[0]}</small>
+                            </button>
                         </div>
                     </div>
                 </section>
+
+                {summaryModal && (
+                    <div className="summary-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setSummaryModal(null);
+                    }}>
+                        <section className={`summary-modal summary-modal-${summaryModal.tone}`} role="dialog" aria-modal="true" aria-labelledby="summary-modal-title">
+                            <header>
+                                <div>
+                                    <span>종합 피드백</span>
+                                    <h2 id="summary-modal-title">{summaryModal.title}</h2>
+                                </div>
+                                <button type="button" onClick={() => setSummaryModal(null)} aria-label="닫기">×</button>
+                            </header>
+                            <ul>
+                                {summaryModal.items.map((item, index) => <li key={index}>{item}</li>)}
+                            </ul>
+                        </section>
+                    </div>
+                )}
 
                 <section className="reflection-note-section">
                     <div className="reflection-note-copy">
