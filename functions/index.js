@@ -1,14 +1,22 @@
 const admin = require("firebase-admin");
+const ffmpegPath = require("ffmpeg-static");
 const { GoogleAuth } = require("google-auth-library");
+const { execFile } = require("node:child_process");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
+const fs = require("node:fs/promises");
 const { logger } = require("firebase-functions");
+const os = require("node:os");
+const path = require("node:path");
+const { promisify } = require("node:util");
 const {
   FEEDBACK_CATEGORIES,
   FEEDBACK_ITEMS_BY_ID,
   ALL_ITEM_IDS,
   buildEmptyCategoryAverages,
 } = require("./lib/feedbackAreas.cjs");
+
+const execFileAsync = promisify(execFile);
 
 admin.initializeApp();
 
@@ -22,19 +30,37 @@ const FILE_REGISTER_ENDPOINT = `${FILE_API_BASE}/files:register`;
 const FILE_PROCESSING_POLL_MS = 3000;
 const VIDEO_PROCESSING_MAX_WAIT_MS = 300000;
 const MATERIAL_PROCESSING_MAX_WAIT_MS = 120000;
-const CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "us";
+const RAW_CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "us";
 const CHIRP_STT_MODEL = process.env.CHIRP_STT_MODEL || "chirp_3";
 const CHIRP_STT_LANGUAGE = process.env.CHIRP_STT_LANGUAGE || "ko-KR";
+const CHIRP_STT_WORD_TIME_OFFSET_MAX_SECONDS = Number(process.env.CHIRP_STT_WORD_TIME_OFFSET_MAX_SECONDS || 20 * 60);
 const STT_OUTPUT_PREFIX = "speech-transcripts";
-const SPEECH_API_BASE =
-  CHIRP_STT_LOCATION === "global"
-    ? "https://speech.googleapis.com/v2"
-    : `https://${CHIRP_STT_LOCATION}-speech.googleapis.com/v2`;
 const GCS_READ_SCOPES = [
   "https://www.googleapis.com/auth/devstorage.read_only",
   "https://www.googleapis.com/auth/cloud-platform",
   "https://www.googleapis.com/auth/generative-language.retriever",
 ];
+
+function resolveChirpSttLocation(location, model, languageCode) {
+  const normalized = String(location || "us").trim().toLowerCase();
+  if (model === "chirp_3" && languageCode === "ko-KR" && normalized === "global") {
+    return "us";
+  }
+  return normalized || "us";
+}
+
+const CHIRP_STT_LOCATION = resolveChirpSttLocation(RAW_CHIRP_STT_LOCATION, CHIRP_STT_MODEL, CHIRP_STT_LANGUAGE);
+
+function speechApiBaseForLocation(location) {
+  return location === "global"
+    ? "https://speech.googleapis.com/v2"
+    : `https://${location}-speech.googleapis.com/v2`;
+}
+
+function speechApiBaseFromOperationName(operationName) {
+  const location = String(operationName || "").match(/\/locations\/([^/]+)\//)?.[1] || CHIRP_STT_LOCATION;
+  return speechApiBaseForLocation(location);
+}
 
 function extractJSON(text) {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
@@ -118,6 +144,18 @@ function makeTranscriptOutputUri(bucket, uid, presentationId, attemptId) {
   ].join("/"));
 }
 
+function makeTranscriptAudioUri(outputUri, sourceGcsUri) {
+  const { bucket, path: outputPath } = parseGcsUri(outputUri);
+  const sourcePath = parseGcsUri(sourceGcsUri).path;
+  const parsed = path.parse(sourcePath);
+  const audioPath = [
+    outputPath.replace(/\/+$/, ""),
+    "audio",
+    `${compactPathPart(parsed.name, "input")}.wav`,
+  ].join("/");
+  return makeGcsUri(bucket, audioPath);
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -135,6 +173,45 @@ function parseDurationSeconds(value) {
   const match = value.match(/^(-?\d+(?:\.\d+)?)s$/);
   if (!match) return null;
   return Number(match[1]);
+}
+
+function parseDurationTextSeconds(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const text = String(value || "").trim();
+  if (!text) return null;
+
+  const colonParts = text.split(":").map((part) => Number(part));
+  if (colonParts.length >= 2 && colonParts.length <= 3 && colonParts.every((part) => Number.isFinite(part))) {
+    return colonParts.reduce((total, part) => total * 60 + part, 0);
+  }
+
+  const compact = text.match(/(\d+(?:\.\d+)?)\s*(시간|hours?|hrs?|h|분|minutes?|mins?|m|초|seconds?|secs?|s)/gi);
+  if (compact) {
+    return compact.reduce((total, token) => {
+      const [, amountText, unit] = token.match(/(\d+(?:\.\d+)?)\s*(시간|hours?|hrs?|h|분|minutes?|mins?|m|초|seconds?|secs?|s)/i) || [];
+      const amount = Number(amountText);
+      if (!Number.isFinite(amount)) return total;
+      if (/^(시간|hours?|hrs?|h)$/i.test(unit)) return total + amount * 3600;
+      if (/^(분|minutes?|mins?|m)$/i.test(unit)) return total + amount * 60;
+      return total + amount;
+    }, 0);
+  }
+
+  const minutes = text.match(/^(\d+(?:\.\d+)?)\s*분?$/);
+  if (minutes) return Number(minutes[1]) * 60;
+  return null;
+}
+
+function shouldEnableChirpWordTimeOffsets(durationText) {
+  if (process.env.CHIRP_STT_ENABLE_WORD_TIME_OFFSETS === "false") return false;
+  if (process.env.CHIRP_STT_ENABLE_WORD_TIME_OFFSETS === "true") return true;
+
+  const durationSeconds = parseDurationTextSeconds(durationText);
+  if (durationSeconds != null && durationSeconds > CHIRP_STT_WORD_TIME_OFFSET_MAX_SECONDS) {
+    return false;
+  }
+
+  return true;
 }
 
 function makeTranscriptDigest(transcript, maxChars = 6000) {
@@ -162,7 +239,7 @@ async function getGoogleAuthContext() {
 }
 
 async function fetchSpeechOperation(operationName, authContext) {
-  const response = await fetch(`${SPEECH_API_BASE}/${operationName}`, {
+  const response = await fetch(`${speechApiBaseFromOperationName(operationName)}/${operationName}`, {
     headers: {
       Authorization: `Bearer ${authContext.accessToken}`,
       "x-goog-user-project": authContext.projectId,
@@ -345,10 +422,58 @@ function wordsToUtterances(segments) {
     });
 }
 
-async function startChirpBatchTranscription(gcsUri, outputUri, authContext) {
+async function extractSpeechAudioToWav(sourceGcsUri, outputUri) {
+  if (!ffmpegPath) {
+    throw new Error("ffmpeg binary를 찾지 못해 STT용 오디오를 추출할 수 없습니다.");
+  }
+
+  const source = parseGcsUri(sourceGcsUri);
+  const audioGcsUri = makeTranscriptAudioUri(outputUri, sourceGcsUri);
+  const audio = parseGcsUri(audioGcsUri);
+  const tempPrefix = `chirp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const sourceExt = path.extname(source.path) || ".mp4";
+  const tempVideoPath = path.join(os.tmpdir(), `${tempPrefix}${sourceExt}`);
+  const tempAudioPath = path.join(os.tmpdir(), `${tempPrefix}.wav`);
+
+  try {
+    await admin.storage().bucket(source.bucket).file(source.path).download({ destination: tempVideoPath });
+    await execFileAsync(ffmpegPath, [
+      "-y",
+      "-i", tempVideoPath,
+      "-vn",
+      "-ac", "1",
+      "-ar", "16000",
+      "-c:a", "pcm_s16le",
+      tempAudioPath,
+    ], { timeout: 480000, maxBuffer: 1024 * 1024 * 8 });
+
+    await admin.storage().bucket(audio.bucket).upload(tempAudioPath, {
+      destination: audio.path,
+      metadata: {
+        contentType: "audio/wav",
+        metadata: {
+          sourceVideoUri: sourceGcsUri,
+          generatedFor: "chirp-stt",
+        },
+      },
+    });
+
+    return audioGcsUri;
+  } catch (error) {
+    throw new Error(`STT용 오디오 추출 실패: ${error.stderr || error.message}`);
+  } finally {
+    await Promise.all([
+      fs.unlink(tempVideoPath).catch(() => {}),
+      fs.unlink(tempAudioPath).catch(() => {}),
+    ]);
+  }
+}
+
+async function startChirpBatchTranscription(gcsUri, outputUri, authContext, options = {}) {
+  const enableWordTimeOffsets = shouldEnableChirpWordTimeOffsets(options.duration);
   const recognizer = `projects/${authContext.projectId}/locations/${CHIRP_STT_LOCATION}/recognizers/_`;
   const response = await fetch(
-    `${SPEECH_API_BASE}/${recognizer}:batchRecognize`,
+    `${speechApiBaseForLocation(CHIRP_STT_LOCATION)}/${recognizer}:batchRecognize`,
     {
       method: "POST",
       headers: {
@@ -363,7 +488,7 @@ async function startChirpBatchTranscription(gcsUri, outputUri, authContext) {
           model: CHIRP_STT_MODEL,
           features: {
             enableAutomaticPunctuation: true,
-            enableWordTimeOffsets: true,
+            enableWordTimeOffsets,
           },
         },
         configMask: "*",
@@ -393,6 +518,9 @@ async function startChirpBatchTranscription(gcsUri, outputUri, authContext) {
     model: CHIRP_STT_MODEL,
     languageCode: CHIRP_STT_LANGUAGE,
     location: CHIRP_STT_LOCATION,
+    requestedLocation: RAW_CHIRP_STT_LOCATION,
+    sourceVideoUri: options.sourceVideoUri || "",
+    wordTimeOffsets: enableWordTimeOffsets,
     createdAt: new Date().toISOString(),
   };
 }
@@ -432,6 +560,24 @@ async function resolveChirpBatchTranscript(operationInfo, authContext) {
     || null;
 
   const outputResultUri = fileResult?.uri || fileResult?.cloudStorageResult?.uri || "";
+  if (fileResult?.error) {
+    return {
+      done: true,
+      transcript: {
+        error: fileResult.error.message || "Chirp STT 파일 인식이 실패했습니다.",
+        errorCode: fileResult.error.code || null,
+        model: CHIRP_STT_MODEL,
+        languageCode: CHIRP_STT_LANGUAGE,
+        location: CHIRP_STT_LOCATION,
+        inputUri: operationInfo.inputUri,
+        sourceVideoUri: operationInfo.sourceVideoUri || "",
+        outputUri: outputResultUri || operationInfo.outputUri || "",
+        text: "",
+        utterances: [],
+      },
+    };
+  }
+
   const batchPayload = outputResultUri
     ? await downloadJsonFromGcsUri(outputResultUri)
     : current.response;
@@ -1011,7 +1157,11 @@ exports.analyzePresentationFromStorage = onCall(
         return { analysisResult };
       }
 
-      const speechOperation = await startChirpBatchTranscription(videoGcsUri, transcriptOutputUri, authContext);
+      const speechAudioGcsUri = await extractSpeechAudioToWav(videoGcsUri, transcriptOutputUri);
+      const speechOperation = await startChirpBatchTranscription(speechAudioGcsUri, transcriptOutputUri, authContext, {
+        duration: data.duration,
+        sourceVideoUri: videoGcsUri,
+      });
       await attemptRef.set({
         transcript: {
           status: "processing",
@@ -1026,7 +1176,12 @@ exports.analyzePresentationFromStorage = onCall(
         presentationId,
         attemptId,
         operation: speechOperation.name,
+        inputUri: speechAudioGcsUri,
         outputUri: transcriptOutputUri,
+        sourceVideoUri: videoGcsUri,
+        location: speechOperation.location,
+        requestedLocation: speechOperation.requestedLocation,
+        wordTimeOffsets: speechOperation.wordTimeOffsets,
       });
 
       return {
