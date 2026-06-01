@@ -257,6 +257,7 @@ export default function SimulationWaitingPage({ params }) {
                                     attemptId: data.attemptId,
                                     attemptNo: data.attemptNo || null,
                                     reflectionNote: "",
+                                    reflectionFields: {},
                                 }));
                             }
                             if (data.feedbackItems) {

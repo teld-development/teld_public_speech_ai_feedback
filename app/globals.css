@@ -5213,70 +5213,132 @@ a {
 }
 
 .reflection-note-section {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.32fr) minmax(0, 1fr);
-  gap: 22px;
-  align-items: start;
-  border: 1px solid var(--border);
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
   border-radius: var(--radius-xl);
   background: var(--surface);
-  padding: 22px 24px;
 }
 
-.reflection-note-copy span {
+.reflection-note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  border: 0;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  padding: 20px 24px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.reflection-note-header span {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: #4f46e5;
   font-size: 12px;
   font-weight: 850;
 }
 
-.reflection-note-copy h2 {
-  margin: 0 0 8px;
-  color: var(--ink);
+.reflection-note-header h2 {
+  margin: 0 0 6px;
+  color: #0f172a;
   font-size: 18px;
   font-weight: 850;
 }
 
-.reflection-note-copy p {
+.reflection-note-header p {
+  display: -webkit-box;
   margin: 0;
-  color: var(--ink-secondary);
+  overflow: hidden;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.reflection-note-header > strong {
+  flex: 0 0 auto;
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.reflection-note-body {
+  border-top: 1px solid #e5e7eb;
+  padding: 18px 24px 22px;
+}
+
+.reflection-step-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.reflection-step-tabs button {
+  min-width: 0;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.reflection-step-tabs button.active {
+  border-color: #818cf8;
+  background: #eef2ff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.reflection-step-tabs span {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.reflection-step-tabs i {
+  display: inline-block;
+  margin-top: 6px;
+  color: #4f46e5;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.reflection-step-panel {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.28fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.reflection-step-copy h3 {
+  margin: 0 0 8px;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.reflection-step-copy p {
+  margin: 0;
+  color: #64748b;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.reflection-note-editor {
-  min-width: 0;
-}
-
-.reflection-prompt-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.reflection-prompt-row button {
-  border: 1px solid #dbe3ef;
-  border-radius: 999px;
-  background: #f8fafc;
-  color: #334155;
-  padding: 7px 11px;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.reflection-prompt-row button:hover {
-  border-color: #c7d2fe;
-  background: #eef2ff;
-  color: #3730a3;
-}
-
-.reflection-note-editor textarea {
+.reflection-step-panel textarea {
   width: 100%;
-  min-height: 128px;
+  min-height: 132px;
   resize: vertical;
   border: 1px solid #dbe3ef;
   border-radius: 8px;
@@ -5289,7 +5351,7 @@ a {
   outline: none;
 }
 
-.reflection-note-editor textarea:focus {
+.reflection-step-panel textarea:focus {
   border-color: #818cf8;
   background: #ffffff;
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14);
@@ -5300,7 +5362,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 10px;
+  margin-top: 14px;
 }
 
 .reflection-note-actions span {
@@ -11909,9 +11971,19 @@ a {
 
 /* Responsive */
 @media (max-width: 720px) {
-  .reflection-note-section {
+  .reflection-note-header,
+  .reflection-note-body {
+    padding: 16px;
+  }
+
+  .reflection-note-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .reflection-step-tabs,
+  .reflection-step-panel {
     grid-template-columns: 1fr;
-    padding: 18px;
   }
 
   .reflection-note-actions {

@@ -374,6 +374,7 @@ export default function PresentationDetailPage({ params }) {
             attemptId: attempt.id,
             attemptNo: attempt.attemptNo || null,
             reflectionNote: attempt.reflectionNote || "",
+            reflectionFields: attempt.reflectionFields || null,
         }));
         router.push("/analysis");
     };

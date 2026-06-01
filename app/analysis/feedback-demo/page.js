@@ -79,6 +79,29 @@ const DUMMY_TRANSCRIPT = [
     { time: "02:31", text: "정리하면 인공지능은 수업을 대체하는 도구가 아니라 교사의 판단을 보조하는 도구로 활용되어야 합니다." },
     { time: "03:12", text: "이상으로 발표를 마치겠습니다. 감사합니다." },
 ];
+const DEMO_REFLECTION_STEPS = [
+    {
+        id: "keep",
+        label: "유지할 점",
+        title: "오늘 발표에서 계속 가져갈 점",
+        desc: "잘 작동했던 표현, 구성, 태도, 자료 활용을 적어두세요.",
+        placeholder: "예: 도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+    },
+    {
+        id: "improve",
+        label: "바꿀 점",
+        title: "다음 회차에서 조정할 점",
+        desc: "분석 결과를 보고 가장 먼저 고치고 싶은 한두 가지를 정리하세요.",
+        placeholder: "예: 결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
+    },
+    {
+        id: "next",
+        label: "다음 실행",
+        title: "다음 연습에서 실제로 할 행동",
+        desc: "다음 회차 전에 바로 실행할 수 있는 연습 계획을 적어두세요.",
+        placeholder: "예: 마지막 30초 결론부만 따로 3번 녹화해보기.",
+    },
+];
 
 function formatDuration(seconds) {
     const rounded = Math.max(0, Math.round(seconds));
@@ -112,13 +135,21 @@ export default function FeedbackDemoPage() {
     const [selectedByCategory, setSelectedByCategory] = useState(getInitialSelections);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatInput, setChatInput] = useState("");
-    const [demoReflectionNote, setDemoReflectionNote] = useState("결론에서 핵심 문장을 더 또렷하게 정리해야겠다. 다음 연습에서는 마지막 30초를 따로 반복해보기.");
+    const [demoReflectionOpen, setDemoReflectionOpen] = useState(true);
+    const [activeDemoReflectionStep, setActiveDemoReflectionStep] = useState("keep");
+    const [demoReflectionFields, setDemoReflectionFields] = useState({
+        keep: "도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+        improve: "결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
+        next: "마지막 30초 결론부만 따로 3번 녹화해보기.",
+    });
     const [summaryModal, setSummaryModal] = useState(null);
 
     const totalFeedbackCount = useMemo(
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
         []
     );
+    const activeDemoReflection = DEMO_REFLECTION_STEPS.find((step) => step.id === activeDemoReflectionStep) || DEMO_REFLECTION_STEPS[0];
+    const demoReflectionPreview = Object.values(demoReflectionFields).find((value) => value.trim()) || "분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.";
 
     return (
         <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
@@ -205,34 +236,59 @@ export default function FeedbackDemoPage() {
                     </div>
                 )}
 
-                <section className="reflection-note-section">
-                    <div className="reflection-note-copy">
-                        <span>성찰 노트</span>
-                        <h2>이번 연습에서 남길 것</h2>
-                        <p>분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.</p>
-                    </div>
-                    <div className="reflection-note-editor">
-                        <div className="reflection-prompt-row">
-                            {["오늘 가장 잘 된 점은?", "다음 연습에서 바꿀 점은?", "기억하고 싶은 피드백은?"].map((prompt) => (
-                                <button
-                                    key={prompt}
-                                    type="button"
-                                    onClick={() => setDemoReflectionNote((prev) => `${prev.trim()}\n\n${prompt}\n`)}
-                                >
-                                    {prompt}
-                                </button>
-                            ))}
+                <section className={`reflection-note-section ${demoReflectionOpen ? "open" : ""}`}>
+                    <button
+                        type="button"
+                        className="reflection-note-header"
+                        onClick={() => setDemoReflectionOpen((value) => !value)}
+                        aria-expanded={demoReflectionOpen}
+                    >
+                        <div>
+                            <span>성찰 노트</span>
+                            <h2>이번 회차를 다음 연습으로 연결하기</h2>
+                            <p>{demoReflectionPreview}</p>
                         </div>
-                        <textarea
-                            value={demoReflectionNote}
-                            onChange={(event) => setDemoReflectionNote(event.target.value)}
-                            rows={5}
-                        />
-                        <div className="reflection-note-actions">
-                            <span>더미 화면입니다. 실제 분석 화면에서는 회차 기록에 저장됩니다.</span>
-                            <button type="button" disabled>성찰 저장</button>
+                        <strong>{demoReflectionOpen ? "접기" : "이어쓰기"}</strong>
+                    </button>
+
+                    {demoReflectionOpen && (
+                        <div className="reflection-note-body">
+                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
+                                {DEMO_REFLECTION_STEPS.map((step) => (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={activeDemoReflectionStep === step.id}
+                                        className={activeDemoReflectionStep === step.id ? "active" : ""}
+                                        onClick={() => setActiveDemoReflectionStep(step.id)}
+                                    >
+                                        <span>{step.label}</span>
+                                        {demoReflectionFields[step.id]?.trim() && <i>작성됨</i>}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="reflection-step-panel">
+                                <div className="reflection-step-copy">
+                                    <h3>{activeDemoReflection.title}</h3>
+                                    <p>{activeDemoReflection.desc}</p>
+                                </div>
+                                <textarea
+                                    value={demoReflectionFields[activeDemoReflection.id] || ""}
+                                    onChange={(event) => setDemoReflectionFields((prev) => ({
+                                        ...prev,
+                                        [activeDemoReflection.id]: event.target.value,
+                                    }))}
+                                    placeholder={activeDemoReflection.placeholder}
+                                    rows={5}
+                                />
+                            </div>
+                            <div className="reflection-note-actions">
+                                <span>더미 화면입니다. 실제 분석 화면에서는 회차 기록에 저장됩니다.</span>
+                                <button type="button" disabled>성찰 저장</button>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </section>
 
                 <div className="bottom-sections-wrapper">

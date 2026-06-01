@@ -16,6 +16,65 @@ function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
     }, {});
 }
 
+const REFLECTION_STEPS = [
+    {
+        id: "keep",
+        label: "유지할 점",
+        title: "오늘 발표에서 계속 가져갈 점",
+        desc: "잘 작동했던 표현, 구성, 태도, 자료 활용을 적어두세요.",
+        placeholder: "예: 도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+    },
+    {
+        id: "improve",
+        label: "바꿀 점",
+        title: "다음 회차에서 조정할 점",
+        desc: "분석 결과를 보고 가장 먼저 고치고 싶은 한두 가지를 정리하세요.",
+        placeholder: "예: 결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
+    },
+    {
+        id: "next",
+        label: "다음 실행",
+        title: "다음 연습에서 실제로 할 행동",
+        desc: "다음 회차 전에 바로 실행할 수 있는 연습 계획을 적어두세요.",
+        placeholder: "예: 마지막 30초 결론부만 따로 3번 녹화해보기.",
+    },
+];
+
+const EMPTY_REFLECTION_FIELDS = REFLECTION_STEPS.reduce((acc, step) => {
+    acc[step.id] = "";
+    return acc;
+}, {});
+
+function buildReflectionNote(fields = EMPTY_REFLECTION_FIELDS) {
+    return REFLECTION_STEPS
+        .map((step) => {
+            const value = String(fields[step.id] || "").trim();
+            return value ? `[${step.label}]\n${value}` : "";
+        })
+        .filter(Boolean)
+        .join("\n\n");
+}
+
+function reflectionPreview(fields = EMPTY_REFLECTION_FIELDS) {
+    const firstValue = REFLECTION_STEPS
+        .map((step) => String(fields[step.id] || "").trim())
+        .find(Boolean);
+    return firstValue || "분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.";
+}
+
+function normalizeReflectionFields(context = {}) {
+    if (context.reflectionFields && typeof context.reflectionFields === "object") {
+        return {
+            ...EMPTY_REFLECTION_FIELDS,
+            ...context.reflectionFields,
+        };
+    }
+    return {
+        ...EMPTY_REFLECTION_FIELDS,
+        keep: context.reflectionNote || "",
+    };
+}
+
 function parseExpectedDurationSeconds(value) {
     if (typeof value === "number" && Number.isFinite(value)) return value;
     const text = String(value || "").trim();
@@ -134,8 +193,10 @@ export default function AnalysisPage() {
     const [expectedDurationText, setExpectedDurationText] = useState("");
     const [actualVideoSeconds, setActualVideoSeconds] = useState(null);
     const [analysisContext, setAnalysisContext] = useState(null);
-    const [reflectionNote, setReflectionNote] = useState("");
-    const [savedReflectionNote, setSavedReflectionNote] = useState("");
+    const [reflectionFields, setReflectionFields] = useState(EMPTY_REFLECTION_FIELDS);
+    const [savedReflectionFields, setSavedReflectionFields] = useState(EMPTY_REFLECTION_FIELDS);
+    const [reflectionOpen, setReflectionOpen] = useState(false);
+    const [activeReflectionStep, setActiveReflectionStep] = useState("keep");
     const [savingReflection, setSavingReflection] = useState(false);
     const [reflectionStatus, setReflectionStatus] = useState("");
     const [summaryModal, setSummaryModal] = useState(null);
@@ -155,9 +216,11 @@ export default function AnalysisPage() {
                 const savedAnalysisContext = sessionStorage.getItem("analysisContext");
                 if (savedAnalysisContext) {
                     const context = JSON.parse(savedAnalysisContext);
+                    const fields = normalizeReflectionFields(context);
                     setAnalysisContext(context);
-                    setReflectionNote(context.reflectionNote || "");
-                    setSavedReflectionNote(context.reflectionNote || "");
+                    setReflectionFields(fields);
+                    setSavedReflectionFields(fields);
+                    setReflectionOpen(Boolean(buildReflectionNote(fields)));
                 }
 
                 const savedPrepareData = sessionStorage.getItem("prepareData");
@@ -371,19 +434,12 @@ export default function AnalysisPage() {
         return "선택한 타임스탬프 피드백을 기준으로 다음 연습에서 같은 장면을 다시 확인해보세요.";
     };
 
-    const addReflectionPrompt = (prompt) => {
-        setReflectionNote((prev) => {
-            const prefix = prev.trim() ? `${prev.trim()}\n\n` : "";
-            return `${prefix}${prompt}\n`;
-        });
-    };
-
     const handleSaveReflection = async () => {
         if (!user || !analysisContext?.presentationId || !analysisContext?.attemptId || savingReflection) return;
         setSavingReflection(true);
         setReflectionStatus("");
         try {
-            const note = reflectionNote.trim();
+            const note = buildReflectionNote(reflectionFields);
             const attemptRef = doc(
                 db,
                 "users",
@@ -395,12 +451,13 @@ export default function AnalysisPage() {
             );
             await updateDoc(attemptRef, {
                 reflectionNote: note,
+                reflectionFields,
                 reflectionUpdatedAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             });
-            const nextContext = { ...analysisContext, reflectionNote: note };
+            const nextContext = { ...analysisContext, reflectionNote: note, reflectionFields };
             setAnalysisContext(nextContext);
-            setSavedReflectionNote(note);
+            setSavedReflectionFields(reflectionFields);
             sessionStorage.setItem("analysisContext", JSON.stringify(nextContext));
             setReflectionStatus("저장되었습니다.");
         } catch (err) {
@@ -412,7 +469,8 @@ export default function AnalysisPage() {
     };
 
     const canSaveReflection = Boolean(user && analysisContext?.presentationId && analysisContext?.attemptId);
-    const reflectionDirty = reflectionNote.trim() !== savedReflectionNote.trim();
+    const reflectionDirty = buildReflectionNote(reflectionFields) !== buildReflectionNote(savedReflectionFields);
+    const activeReflection = REFLECTION_STEPS.find((step) => step.id === activeReflectionStep) || REFLECTION_STEPS[0];
 
     return (
         <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
@@ -513,48 +571,74 @@ export default function AnalysisPage() {
                     </div>
                 )}
 
-                <section className="reflection-note-section">
-                    <div className="reflection-note-copy">
-                        <span>성찰 노트</span>
-                        <h2>이번 연습에서 남길 것</h2>
-                        <p>분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.</p>
-                    </div>
-                    <div className="reflection-note-editor">
-                        <div className="reflection-prompt-row">
-                            {[
-                                "오늘 가장 잘 된 점은?",
-                                "다음 연습에서 바꿀 점은?",
-                                "기억하고 싶은 피드백은?",
-                            ].map((prompt) => (
-                                <button key={prompt} type="button" onClick={() => addReflectionPrompt(prompt)}>
-                                    {prompt}
+                <section className={`reflection-note-section ${reflectionOpen ? "open" : ""}`}>
+                    <button
+                        type="button"
+                        className="reflection-note-header"
+                        onClick={() => setReflectionOpen((value) => !value)}
+                        aria-expanded={reflectionOpen}
+                    >
+                        <div>
+                            <span>성찰 노트</span>
+                            <h2>이번 회차를 다음 연습으로 연결하기</h2>
+                            <p>{reflectionPreview(reflectionFields)}</p>
+                        </div>
+                        <strong>{reflectionOpen ? "접기" : buildReflectionNote(reflectionFields) ? "이어쓰기" : "작성하기"}</strong>
+                    </button>
+
+                    {reflectionOpen && (
+                        <div className="reflection-note-body">
+                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
+                                {REFLECTION_STEPS.map((step) => (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={activeReflectionStep === step.id}
+                                        className={activeReflectionStep === step.id ? "active" : ""}
+                                        onClick={() => setActiveReflectionStep(step.id)}
+                                    >
+                                        <span>{step.label}</span>
+                                        {reflectionFields[step.id]?.trim() && <i>작성됨</i>}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="reflection-step-panel">
+                                <div className="reflection-step-copy">
+                                    <h3>{activeReflection.title}</h3>
+                                    <p>{activeReflection.desc}</p>
+                                </div>
+                                <textarea
+                                    value={reflectionFields[activeReflection.id] || ""}
+                                    onChange={(event) => {
+                                        setReflectionFields((prev) => ({
+                                            ...prev,
+                                            [activeReflection.id]: event.target.value,
+                                        }));
+                                        setReflectionStatus("");
+                                    }}
+                                    placeholder={activeReflection.placeholder}
+                                    rows={5}
+                                />
+                            </div>
+
+                            <div className="reflection-note-actions">
+                                <span>
+                                    {canSaveReflection
+                                        ? reflectionStatus || (reflectionDirty ? "저장되지 않은 변경사항이 있습니다." : "회차 기록에 저장됩니다.")
+                                        : "발표 세션에서 열린 분석 결과만 저장할 수 있습니다."}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveReflection}
+                                    disabled={!canSaveReflection || savingReflection || !reflectionDirty}
+                                >
+                                    {savingReflection ? "저장 중..." : "성찰 저장"}
                                 </button>
-                            ))}
+                            </div>
                         </div>
-                        <textarea
-                            value={reflectionNote}
-                            onChange={(event) => {
-                                setReflectionNote(event.target.value);
-                                setReflectionStatus("");
-                            }}
-                            placeholder="예: 결론에서 핵심 문장을 더 또렷하게 정리해야겠다. 다음 연습에서는 마지막 30초를 따로 반복해보기."
-                            rows={5}
-                        />
-                        <div className="reflection-note-actions">
-                            <span>
-                                {canSaveReflection
-                                    ? reflectionStatus || (reflectionDirty ? "저장되지 않은 변경사항이 있습니다." : "회차 기록에 저장됩니다.")
-                                    : "발표 세션에서 열린 분석 결과만 저장할 수 있습니다."}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={handleSaveReflection}
-                                disabled={!canSaveReflection || savingReflection || !reflectionDirty}
-                            >
-                                {savingReflection ? "저장 중..." : "성찰 저장"}
-                            </button>
-                        </div>
-                    </div>
+                    )}
                 </section>
 
                 <div className="bottom-sections-wrapper">

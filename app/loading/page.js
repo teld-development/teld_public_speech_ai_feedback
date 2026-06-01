@@ -427,6 +427,7 @@ export default function LoadingPage() {
                         attemptId,
                         attemptNo: videoData.attemptNo || null,
                         reflectionNote: "",
+                        reflectionFields: {},
                     }));
                 }
 
