@@ -149,7 +149,6 @@ export default function FeedbackDemoPage() {
         []
     );
     const activeDemoReflection = DEMO_REFLECTION_STEPS.find((step) => step.id === activeDemoReflectionStep) || DEMO_REFLECTION_STEPS[0];
-    const demoReflectionPreview = Object.values(demoReflectionFields).find((value) => value.trim()) || "분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.";
 
     return (
         <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
@@ -250,7 +249,7 @@ export default function FeedbackDemoPage() {
                         <div>
                             <span>성찰 노트</span>
                             <h2>이번 회차를 다음 연습으로 연결하기</h2>
-                            <p>{demoReflectionPreview}</p>
+                            <p>유지할 점, 바꿀 점, 다음 실행을 짧게 정리해 회차 기록에 남깁니다.</p>
                         </div>
                         <strong>{demoReflectionOpen ? "접기" : "이어쓰기"}</strong>
                     </button>
@@ -268,7 +267,7 @@ export default function FeedbackDemoPage() {
                                         onClick={() => setActiveDemoReflectionStep(step.id)}
                                     >
                                         <span>{step.label}</span>
-                                        {demoReflectionFields[step.id]?.trim() && <i>작성됨</i>}
+                                        {demoReflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
                                     </button>
                                 ))}
                             </div>

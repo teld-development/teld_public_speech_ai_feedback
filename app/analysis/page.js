@@ -55,13 +55,6 @@ function buildReflectionNote(fields = EMPTY_REFLECTION_FIELDS) {
         .join("\n\n");
 }
 
-function reflectionPreview(fields = EMPTY_REFLECTION_FIELDS) {
-    const firstValue = REFLECTION_STEPS
-        .map((step) => String(fields[step.id] || "").trim())
-        .find(Boolean);
-    return firstValue || "분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.";
-}
-
 function normalizeReflectionFields(context = {}) {
     if (context.reflectionFields && typeof context.reflectionFields === "object") {
         return {
@@ -471,6 +464,9 @@ export default function AnalysisPage() {
     const canSaveReflection = Boolean(user && analysisContext?.presentationId && analysisContext?.attemptId);
     const reflectionDirty = buildReflectionNote(reflectionFields) !== buildReflectionNote(savedReflectionFields);
     const activeReflection = REFLECTION_STEPS.find((step) => step.id === activeReflectionStep) || REFLECTION_STEPS[0];
+    const sessionPath = analysisContext?.presentationId
+        ? `/presentations/${analysisContext.presentationId}`
+        : "/dashboard";
 
     return (
         <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
@@ -480,8 +476,8 @@ export default function AnalysisPage() {
                     <p>{videoName}</p>
                 </div>
                 <div className="header-actions">
-                    <button className="btn-outline" onClick={() => router.push("/dashboard")}>대시보드</button>
-                    <button className="btn-primary-sm" onClick={() => router.push("/dashboard")}>새 연습 시작</button>
+                    <button className="btn-outline" onClick={() => router.push(sessionPath)}>대시보드</button>
+                    <button className="btn-primary-sm" onClick={() => router.push(sessionPath)}>새 연습 시작</button>
                 </div>
             </header>
 
@@ -585,7 +581,6 @@ export default function AnalysisPage() {
                         <div>
                             <span>성찰 노트</span>
                             <h2>이번 회차를 다음 연습으로 연결하기</h2>
-                            <p>{reflectionPreview(reflectionFields)}</p>
                         </div>
                         <strong>{reflectionOpen ? "접기" : buildReflectionNote(reflectionFields) ? "이어쓰기" : "작성하기"}</strong>
                     </button>
@@ -603,7 +598,7 @@ export default function AnalysisPage() {
                                         onClick={() => setActiveReflectionStep(step.id)}
                                     >
                                         <span>{step.label}</span>
-                                        {reflectionFields[step.id]?.trim() && <i>작성됨</i>}
+                                        {reflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
                                     </button>
                                 ))}
                             </div>

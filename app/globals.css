@@ -1357,15 +1357,13 @@
 
 .attempt-reflection-preview {
   display: grid;
-  grid-template-columns: auto 1fr;
   gap: 10px;
-  align-items: start;
   width: calc(100% - 32px);
   margin: 0 16px 14px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #f8fafc;
-  padding: 10px 12px;
+  background: #ffffff;
+  padding: 12px;
   text-align: left;
   font-family: inherit;
   cursor: pointer;
@@ -1373,24 +1371,66 @@
 
 .attempt-reflection-preview:hover {
   border-color: #c7d2fe;
-  background: #eef2ff;
+  background: #f8fafc;
 }
 
-.attempt-reflection-preview span {
+.attempt-reflection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.attempt-reflection-head span {
+  border-radius: 999px;
+  background: #eef2ff;
   color: #4f46e5;
+  padding: 3px 8px;
   font-size: 12px;
   font-weight: 850;
 }
 
-.attempt-reflection-preview p {
-  display: -webkit-box;
+.attempt-reflection-head i {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.attempt-reflection-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.attempt-reflection-item {
+  min-width: 0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 9px 10px;
+}
+
+.attempt-reflection-item strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.attempt-reflection-item p {
   margin: 0;
   overflow: hidden;
   color: #334155;
   font-size: 13px;
   line-height: 1.5;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attempt-reflection-item p.empty {
+  color: #94a3b8;
 }
 
 @media (max-width: 720px) {
@@ -1398,6 +1438,10 @@
   .session-detail-container {
     width: min(100% - 28px, 1180px);
     padding: 28px 0 48px;
+  }
+
+  .attempt-reflection-grid {
+    grid-template-columns: 1fr;
   }
 
   .session-detail-title-row {
@@ -5322,11 +5366,17 @@ a {
 }
 
 .reflection-step-tabs button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
   min-width: 0;
   border: 1px solid #dbe3ef;
   border-radius: 8px;
   background: #f8fafc;
-  padding: 12px;
+  padding: 12px 14px;
   text-align: left;
   font-family: inherit;
   cursor: pointer;
@@ -5340,18 +5390,25 @@ a {
 
 .reflection-step-tabs span {
   display: block;
+  min-width: 0;
   color: #0f172a;
   font-size: 14px;
   font-weight: 850;
 }
 
 .reflection-step-tabs i {
-  display: inline-block;
-  margin-top: 6px;
-  color: #4f46e5;
-  font-size: 11px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 12px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .reflection-step-panel {
