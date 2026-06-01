@@ -129,6 +129,7 @@ export default function LoadingPage() {
     const [error, setError] = useState("");
     const [elapsedTime, setElapsedTime] = useState(0);
     const [uploadProgress, setUploadProgress] = useState(0);
+    const [retryPath, setRetryPath] = useState("/dashboard");
 
     useEffect(() => {
         if (authLoading) return;
@@ -162,13 +163,14 @@ export default function LoadingPage() {
                 const videoData = pendingAnalysis || await getVideoDB("pendingVideo");
 
                 if (!videoData) {
-                    setError("분석할 데이터가 없습니다. 영상을 다시 업로드해주세요.");
+                    setError("분석할 데이터가 없습니다. 대시보드에서 발표 세션을 열고 영상을 다시 업로드해주세요.");
                     clearInterval(timer);
                     return;
                 }
 
                 const { buffer, name, type, prepareData, presentationId, attemptId, recordingUpload, blobResult: preuploadedBlobResult } = videoData;
                 activeAttempt = { presentationId, attemptId };
+                setRetryPath(presentationId ? `/presentations/${presentationId}` : "/dashboard");
 
                 // ArrayBuffer를 Blob으로 변환
                 const blob = buffer ? new Blob([buffer], { type }) : null;
@@ -480,8 +482,8 @@ export default function LoadingPage() {
                     </div>
                     <h1 className="loading-title">분석 오류</h1>
                     <p className="loading-error-message">{error}</p>
-                    <button className="btn-primary" onClick={() => router.push("/upload")}>
-                        다시 시도하기
+                    <button className="btn-primary" onClick={() => router.push(retryPath)}>
+                        발표 세션으로 이동
                     </button>
                 </div>
             </main>

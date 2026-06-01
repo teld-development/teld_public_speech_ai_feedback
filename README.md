@@ -115,8 +115,7 @@ npm run dev
 app/
   page.js                  로그인
   dashboard/page.js        대시보드 (더미 피드백)
-  prepare/page.js          분석 준비 (발표 정보 + 항목 선택)
-  upload/page.js           영상 업로드
+  presentations/[id]/page.js 발표 상세 + 영상 업로드/시뮬레이션 시작
   loading/page.js          업로드 및 분석 진행
   analysis/page.js         분석 결과 + AI 성찰 대화
   api/
