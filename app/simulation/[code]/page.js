@@ -20,6 +20,8 @@ const STATUS_LABEL = {
     in_progress: "시뮬레이션 진행 중",
     completed: "AI 분석 진행 중",
 };
+const ANALYSIS_POLL_INTERVAL_MS = 10000;
+const ANALYSIS_POLL_MAX_MS = 2 * 60 * 60 * 1000;
 
 async function getAttemptAnalysisResult(user, presentationId, attemptId) {
     if (!user?.uid || !presentationId || !attemptId) return null;
@@ -27,7 +29,57 @@ async function getAttemptAnalysisResult(user, presentationId, attemptId) {
     const attemptSnap = await getDoc(attemptRef);
     if (!attemptSnap.exists()) return null;
     const attempt = attemptSnap.data();
-    return attempt.analysisResult || null;
+    return extractAnalysisResult(attempt);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isAnalysisResult(value) {
+    return Boolean(
+        value &&
+        typeof value === "object" &&
+        (
+            Array.isArray(value.timestamps) ||
+            value.scores ||
+            value.summary
+        )
+    );
+}
+
+function extractAnalysisResult(payload) {
+    if (!payload || typeof payload !== "object") return null;
+    // 아직 분석 중인 attempt 문서는 결과로 반환하지 않음
+    if (payload.status && payload.status !== "completed") return null;
+    if (isAnalysisResult(payload.analysisResult)) return payload.analysisResult;
+    if (isAnalysisResult(payload.result)) return payload.result;
+    if (isAnalysisResult(payload.data?.analysisResult)) return payload.data.analysisResult;
+    if (isAnalysisResult(payload)) return payload;
+    return null;
+}
+
+async function resolveStorageFunctionAnalysis(user, presentationId, attemptId, initialData) {
+    let payload = initialData || {};
+    const startedAt = Date.now();
+    const resumeAnalysis = httpsCallable(functions, "resumePresentationAnalysis", {
+        timeout: 540000,
+    });
+
+    while (Date.now() - startedAt < ANALYSIS_POLL_MAX_MS) {
+        const payloadResult = extractAnalysisResult(payload);
+        if (payloadResult) return payloadResult;
+
+        const storedResult = await getAttemptAnalysisResult(user, presentationId, attemptId);
+        if (storedResult) return storedResult;
+
+        await sleep(ANALYSIS_POLL_INTERVAL_MS);
+        const resumed = await resumeAnalysis({ presentationId, attemptId });
+        payload = resumed.data || {};
+    }
+
+    const storedResult = await getAttemptAnalysisResult(user, presentationId, attemptId);
+    if (storedResult) return storedResult;
+
+    throw new Error("분석이 아직 처리 중입니다. 발표 기록에서 완료 상태를 확인하거나 잠시 후 다시 열어주세요.");
 }
 
 export default function SimulationWaitingPage({ params }) {
@@ -141,10 +193,12 @@ export default function SimulationWaitingPage({ params }) {
                                         backendSessionId: data.backendSessionId || "",
                                     },
                                 });
-                                analysisResult = callableResult.data?.analysisResult || null;
-                                if (!analysisResult) {
-                                    analysisResult = await getAttemptAnalysisResult(user, data.presentationId, data.attemptId);
-                                }
+                                analysisResult = await resolveStorageFunctionAnalysis(
+                                    user,
+                                    data.presentationId,
+                                    data.attemptId,
+                                    callableResult.data || {}
+                                );
                                 analysisCompletedByFunction = true;
                             } else {
                                 const analyzeResponse = await fetch("/api/analyze", {
