@@ -254,6 +254,12 @@ export default function SimulationWaitingPage({ params }) {
                             if (data.feedbackItems) {
                                 sessionStorage.setItem("prepareData", JSON.stringify({
                                     feedbackItems: data.feedbackItems || [],
+                                    duration: data.duration || "",
+                                }));
+                            } else {
+                                sessionStorage.setItem("prepareData", JSON.stringify({
+                                    duration: data.duration || "",
+                                    feedbackItems: [],
                                 }));
                             }
                             router.push("/analysis");

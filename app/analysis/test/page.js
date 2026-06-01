@@ -168,6 +168,7 @@ export default function AnalysisTestPage() {
         sessionStorage.setItem("videoName", `테스트: ${profile.label}`);
         sessionStorage.setItem("prepareData", JSON.stringify({
             topic: "테스트 발표",
+            duration: "3분",
             feedbackItems: ALL_ITEM_IDS,
         }));
         router.push("/analysis");

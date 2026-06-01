@@ -30,7 +30,11 @@ export function calculateCategoryAverages(scores = {}) {
 }
 
 export function calculateScoreAverage(scores = {}) {
-    const values = Object.values(scores).filter((score) => typeof score === "number" && Number.isFinite(score));
+    const feedbackItemIds = new Set(FEEDBACK_CATEGORIES.flatMap((category) => category.items.map((item) => item.id)));
+    const values = Object.entries(scores)
+        .filter(([itemId]) => feedbackItemIds.has(itemId))
+        .map(([, score]) => score)
+        .filter((score) => typeof score === "number" && Number.isFinite(score));
     if (!values.length) return null;
     return Number((values.reduce((sum, score) => sum + score, 0) / values.length).toFixed(2));
 }

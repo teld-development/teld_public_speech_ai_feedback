@@ -66,6 +66,27 @@ const DUMMY_SUMMARY = {
     ],
 };
 
+const DEMO_EXPECTED_SECONDS = 180;
+const DEMO_ACTUAL_SECONDS = 228;
+const DUMMY_TRANSCRIPT = [
+    { time: "00:03", text: "안녕하세요. 오늘은 생성형 인공지능을 수업 설계에 활용하는 방법을 발표하겠습니다." },
+    { time: "00:17", text: "먼저 교사가 반복적으로 수행하는 준비 작업을 줄이는 사례부터 살펴보겠습니다." },
+    { time: "00:36", text: "예를 들어 학습 목표에 맞춘 질문 생성이나 수준별 활동지를 빠르게 만들 수 있습니다." },
+    { time: "00:58", text: "다만 생성 결과를 그대로 쓰기보다 수업 맥락과 학생 수준에 맞게 조정하는 과정이 필요합니다." },
+    { time: "01:21", text: "두 번째로 피드백 자동화는 학생의 초안을 빠르게 점검하는 데 도움을 줄 수 있습니다." },
+    { time: "01:43", text: "하지만 평가 기준을 교사가 명확하게 제시하지 않으면 피드백의 방향이 흐려질 수 있습니다." },
+    { time: "02:04", text: "마지막으로 데이터 보안과 저작권 문제를 고려해 학교 차원의 사용 원칙을 세워야 합니다." },
+    { time: "02:31", text: "정리하면 인공지능은 수업을 대체하는 도구가 아니라 교사의 판단을 보조하는 도구로 활용되어야 합니다." },
+    { time: "03:12", text: "이상으로 발표를 마치겠습니다. 감사합니다." },
+];
+
+function formatDuration(seconds) {
+    const rounded = Math.max(0, Math.round(seconds));
+    const mins = Math.floor(rounded / 60);
+    const secs = rounded % 60;
+    return mins > 0 ? `${mins}분 ${secs}초` : `${secs}초`;
+}
+
 function buildDemoFeedback(item, category, index = 0) {
     const baseScore = 3 + (index % 3 === 0 ? 1 : 0);
     return {
@@ -106,10 +127,10 @@ export default function FeedbackDemoPage() {
                 </div>
                 <div className="header-actions">
                     <button type="button" className="btn-outline" onClick={() => router.push("/analysis/test")}>
-                        대시보드
+                        더미 선택
                     </button>
                     <button type="button" className="btn-primary-sm" onClick={() => router.push("/analysis")}>
-                        새 영상 분석
+                        분석 화면
                     </button>
                 </div>
             </header>
@@ -126,6 +147,17 @@ export default function FeedbackDemoPage() {
                     </div>
 
                     <div className="summary-container-v2">
+                        <div className="duration-check-card duration-check-warn">
+                            <div className="duration-check-main">
+                                <span className="duration-check-kicker">발표 시간</span>
+                                <strong>{formatDuration(DEMO_ACTUAL_SECONDS - DEMO_EXPECTED_SECONDS)} 초과</strong>
+                                <span className="duration-check-status">조금 초과</span>
+                            </div>
+                            <div className="duration-check-meta">
+                                <span>예상 {formatDuration(DEMO_EXPECTED_SECONDS)}</span>
+                                <span>실제 {formatDuration(DEMO_ACTUAL_SECONDS)}</span>
+                            </div>
+                        </div>
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{DUMMY_SUMMARY.overall}</p>
 
@@ -151,6 +183,21 @@ export default function FeedbackDemoPage() {
                 </section>
 
                 <div className="bottom-sections-wrapper">
+                    <section className="transcript-section-v2">
+                        <div className="timestamps-header">
+                            <h3>발화 기록</h3>
+                            <span className="timestamps-count">{DUMMY_TRANSCRIPT.length}개 발화</span>
+                        </div>
+                        <div className="transcript-scroll-container">
+                            {DUMMY_TRANSCRIPT.map((utterance, index) => (
+                                <button key={`${utterance.time}-${index}`} type="button" className="transcript-row">
+                                    <span className="transcript-time">{utterance.time}</span>
+                                    <span className="transcript-text">{utterance.text}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="detailed-feedback-header">
                             <h3>영역별 상세 피드백</h3>

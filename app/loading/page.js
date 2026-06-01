@@ -417,6 +417,10 @@ export default function LoadingPage() {
 
                 // 결과 저장
                 sessionStorage.setItem("analysisResult", JSON.stringify(analysisResult));
+                sessionStorage.setItem("prepareData", JSON.stringify({
+                    duration: prepareData.duration || "",
+                    feedbackItems: prepareData.feedbackItems || [],
+                }));
 
                 // 비디오 URL 저장 (재생용)
                 const videoUrl = blob ? URL.createObjectURL(blob) : blobResult.url;

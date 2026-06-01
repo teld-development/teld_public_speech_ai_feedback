@@ -13,6 +13,102 @@ function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
     }, {});
 }
 
+function parseExpectedDurationSeconds(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const text = String(value || "").trim();
+    if (!text) return null;
+
+    if (text.includes(":")) {
+        const parts = text.split(":").map((part) => Number(part.trim()));
+        if (parts.length === 2 && parts.every(Number.isFinite)) {
+            return parts[0] * 60 + parts[1];
+        }
+        if (parts.length === 3 && parts.every(Number.isFinite)) {
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+    }
+
+    const unitPattern = /(\d+(?:\.\d+)?)\s*(시간|hours?|hrs?|h|분|minutes?|mins?|m|초|seconds?|secs?|s)/gi;
+    const matches = [...text.matchAll(unitPattern)];
+    if (matches.length > 0) {
+        return matches.reduce((total, match) => {
+            const amount = Number(match[1]);
+            const unit = match[2].toLowerCase();
+            if (!Number.isFinite(amount)) return total;
+            if (/^(시간|hours?|hrs?|h)$/.test(unit)) return total + amount * 3600;
+            if (/^(분|minutes?|mins?|m)$/.test(unit)) return total + amount * 60;
+            return total + amount;
+        }, 0);
+    }
+
+    const numeric = Number(text.replace(/[^\d.]/g, ""));
+    return Number.isFinite(numeric) && numeric > 0 ? numeric * 60 : null;
+}
+
+function formatDuration(seconds) {
+    if (!Number.isFinite(seconds)) return "-";
+    const rounded = Math.max(0, Math.round(seconds));
+    const hours = Math.floor(rounded / 3600);
+    const mins = Math.floor((rounded % 3600) / 60);
+    const secs = rounded % 60;
+    if (hours > 0) return `${hours}시간 ${mins}분 ${secs}초`;
+    if (mins > 0) return `${mins}분 ${secs}초`;
+    return `${secs}초`;
+}
+
+function parseTimeToSeconds(timeStr) {
+    if (!timeStr) return 0;
+    const parts = String(timeStr).split(":").map((part) => Number(part));
+    if (parts.length === 2 && parts.every(Number.isFinite)) return parts[0] * 60 + parts[1];
+    if (parts.length === 3 && parts.every(Number.isFinite)) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+}
+
+function buildTimingStatus(expectedSeconds, actualSeconds) {
+    if (!expectedSeconds) return null;
+    if (!Number.isFinite(actualSeconds)) {
+        return {
+            tone: "pending",
+            label: "영상 길이 확인 중",
+            differenceLabel: "-",
+            message: "영상 메타데이터를 불러오면 예상 시간과 비교합니다.",
+        };
+    }
+
+    const diff = Math.round(actualSeconds - expectedSeconds);
+    const absDiff = Math.abs(diff);
+    const tolerance = Math.max(10, Math.round(expectedSeconds * 0.05));
+
+    if (absDiff <= tolerance) {
+        return {
+            tone: "good",
+            label: "시간 적절",
+            differenceLabel: "거의 일치",
+            message: "입력한 예상 발표 시간과 실제 영상 시간이 거의 일치합니다.",
+        };
+    }
+
+    if (diff > 0) {
+        return {
+            tone: diff <= 60 ? "warn" : "danger",
+            label: diff <= 60 ? "조금 초과" : "시간 초과",
+            differenceLabel: `${formatDuration(diff)} 초과`,
+            message: diff <= 60
+                ? "예상 시간보다 약간 길었습니다. 핵심 문장 중심으로 마무리를 조금 압축해보세요."
+                : "예상 시간보다 많이 길었습니다. 도입, 예시, 결론 중 줄일 구간을 정해보세요.",
+        };
+    }
+
+    return {
+        tone: absDiff <= 60 ? "under" : "warn",
+        label: absDiff <= 60 ? "조금 짧음" : "시간 여유 큼",
+        differenceLabel: `${formatDuration(absDiff)} 짧음`,
+        message: absDiff <= 60
+            ? "예상 시간보다 조금 짧았습니다. 결론 정리나 핵심 근거를 한 문장 보강해도 좋습니다."
+            : "예상 시간보다 많이 짧았습니다. 주요 근거와 예시를 더 충분히 설명해보세요.",
+    };
+}
+
 export default function AnalysisPage() {
     const router = useRouter();
     const videoRef = useRef(null);
@@ -31,6 +127,8 @@ export default function AnalysisPage() {
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [selectedItemIds, setSelectedItemIds] = useState([]);
     const [selectedByCategory, setSelectedByCategory] = useState(() => buildInitialSelections());
+    const [expectedDurationText, setExpectedDurationText] = useState("");
+    const [actualVideoSeconds, setActualVideoSeconds] = useState(null);
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -48,6 +146,7 @@ export default function AnalysisPage() {
                 if (savedPrepareData) {
                     const prepareData = JSON.parse(savedPrepareData);
                     setSelectedItemIds(prepareData.feedbackItems || []);
+                    setExpectedDurationText(prepareData.duration || "");
                 }
 
                 setTimeout(() => setIsLoading(false), 300);
@@ -89,6 +188,25 @@ export default function AnalysisPage() {
 
     const { timestamps = [], scores = {}, summary = {}, transcript = null } = analysisData || {};
     const transcriptUtterances = Array.isArray(transcript?.utterances) ? transcript.utterances : [];
+    const expectedDurationSeconds = useMemo(
+        () => parseExpectedDurationSeconds(expectedDurationText),
+        [expectedDurationText]
+    );
+    const fallbackActualSeconds = useMemo(() => {
+        const utteranceEnds = transcriptUtterances
+            .map((utterance) => utterance.endSec ?? utterance.startSec)
+            .filter((seconds) => typeof seconds === "number" && Number.isFinite(seconds));
+        const timestampSeconds = timestamps
+            .map((timestamp) => timestamp.seconds ?? parseTimeToSeconds(timestamp.time))
+            .filter((seconds) => typeof seconds === "number" && Number.isFinite(seconds));
+        const candidates = [...utteranceEnds, ...timestampSeconds];
+        return candidates.length ? Math.max(...candidates) : null;
+    }, [timestamps, transcriptUtterances]);
+    const displayActualSeconds = Number.isFinite(actualVideoSeconds) ? actualVideoSeconds : fallbackActualSeconds;
+    const timingStatus = useMemo(
+        () => buildTimingStatus(expectedDurationSeconds, displayActualSeconds),
+        [displayActualSeconds, expectedDurationSeconds]
+    );
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -133,13 +251,6 @@ export default function AnalysisPage() {
         const mins = Math.floor(safeSeconds / 60);
         const secs = Math.floor(safeSeconds % 60);
         return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-    };
-
-    const parseTimeToSeconds = (timeStr) => {
-        if (!timeStr) return 0;
-        const parts = timeStr.split(":");
-        if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-        return 0;
     };
 
     const handleChatSubmit = async (e) => {
@@ -259,7 +370,13 @@ export default function AnalysisPage() {
                 <section className="video-summary-section">
                     <div className="video-container-v2">
                         {videoUrl ? (
-                            <video ref={videoRef} className="video-player-v2" src={videoUrl} controls>
+                            <video
+                                ref={videoRef}
+                                className="video-player-v2"
+                                src={videoUrl}
+                                controls
+                                onLoadedMetadata={(event) => setActualVideoSeconds(event.currentTarget.duration)}
+                            >
                                 브라우저가 비디오 재생을 지원하지 않습니다.
                             </video>
                         ) : (
@@ -273,6 +390,19 @@ export default function AnalysisPage() {
                     </div>
 
                     <div className="summary-container-v2">
+                        {expectedDurationText && timingStatus && (
+                            <div className={`duration-check-card duration-check-${timingStatus.tone}`}>
+                                <div className="duration-check-main">
+                                    <span className="duration-check-kicker">발표 시간</span>
+                                    <strong>{timingStatus.differenceLabel}</strong>
+                                    <span className="duration-check-status">{timingStatus.label}</span>
+                                </div>
+                                <div className="duration-check-meta">
+                                    <span>예상 {formatDuration(expectedDurationSeconds)}</span>
+                                    <span>실제 {formatDuration(displayActualSeconds)}</span>
+                                </div>
+                            </div>
+                        )}
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{summary.overall}</p>
 

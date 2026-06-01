@@ -365,6 +365,10 @@ export default function PresentationDetailPage({ params }) {
         sessionStorage.setItem("analysisResult", JSON.stringify(attempt.analysisResult));
         sessionStorage.setItem("videoUrl", attempt.video?.videoUrl || "");
         sessionStorage.setItem("videoName", `${presentation.title || "발표"} ${attempt.attemptNo}회차`);
+        sessionStorage.setItem("prepareData", JSON.stringify({
+            duration: presentation.duration || "",
+            feedbackItems: attempt.analysisResult?.feedbackItems || [],
+        }));
         router.push("/analysis");
     };
 
