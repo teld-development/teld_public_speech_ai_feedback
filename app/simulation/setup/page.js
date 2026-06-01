@@ -10,6 +10,7 @@ import {
     buildRecordingUpload,
     createPresentationAttempt,
     getPresentationSession,
+    getRecentImprovementPoints,
 } from "../../lib/presentations";
 
 const generateSimulationCode = () =>
@@ -275,6 +276,14 @@ function SimulationSetupPageContent() {
                 });
             }
 
+            // ★ #4 직전 발표 보완점 — Unity 가 핀코드 연동 시 읽어 PDF 로딩 중 표시 (없으면 빈 배열)
+            let previousFeedback = [];
+            try {
+                previousFeedback = await getRecentImprovementPoints(user, 3);
+            } catch (e) {
+                console.warn("[setup] previousFeedback 조회 실패(무시):", e);
+            }
+
             // 3) Firestore에 시뮬레이션 정보 저장 (Unity가 읽음)
             const { presentationMaterial: _mat, presentationId: _pid, ...meta } = prepareData;
             const simulationPayload = {
@@ -305,6 +314,7 @@ function SimulationSetupPageContent() {
                     slideCount: slideImageUrls.length,
                 },
                 recordingUpload,
+                previousFeedback,   // ★ #4 직전 발표 보완점 3개 (Unity 가 claim 시 읽음)
                 status: "waiting",
                 createdAt: serverTimestamp(),
             };

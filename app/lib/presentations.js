@@ -15,6 +15,41 @@ import { FEEDBACK_CATEGORIES, buildEmptyCategoryAverages } from "./feedbackAreas
 
 export const RECORDINGS_BUCKET = "public-speech-feedback.firebasestorage.app";
 
+/**
+ * ★ #4 사용자의 '직전 완료 발표 보완점' 추출.
+ * (Unity 핀코드 연동 시 simulations/{code}.previousFeedback 로 전달 → PDF 로딩 중 표시)
+ * 최근 업데이트된 발표부터 훑어, 완료 attempt 의 analysisResult.summary.suggestions 를 찾으면 상위 max 개 반환.
+ * 없으면(첫 발표 등) 빈 배열.
+ */
+export async function getRecentImprovementPoints(user, max = 3) {
+    if (!user?.uid) return [];
+
+    const presSnap = await getDocs(collection(db, "users", user.uid, "presentations"));
+    const candidates = presSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((p) => p.latestAttemptId)
+        .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+
+    for (const p of candidates) {
+        try {
+            const attSnap = await getDoc(
+                doc(db, "users", user.uid, "presentations", p.id, "attempts", p.latestAttemptId)
+            );
+            const suggestions = attSnap.data()?.analysisResult?.summary?.suggestions;
+            if (Array.isArray(suggestions) && suggestions.length) {
+                return suggestions
+                    .map((s) => (typeof s === "string" ? s : s?.text || s?.title || ""))
+                    .map((s) => String(s).trim())
+                    .filter(Boolean)
+                    .slice(0, max);
+            }
+        } catch {
+            // 개별 attempt 읽기 실패는 무시하고 다음 후보로
+        }
+    }
+    return [];
+}
+
 export function calculateCategoryAverages(scores = {}) {
     return FEEDBACK_CATEGORIES.reduce((acc, category) => {
         const values = category.items
