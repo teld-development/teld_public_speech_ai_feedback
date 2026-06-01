@@ -528,21 +528,25 @@ export default function AnalysisPage() {
                         <div className="summary-lists">
                             <button
                                 type="button"
-                                className="summary-block summary-card-trigger strengths"
+                                className="summary-card-trigger strengths"
                                 onClick={() => setSummaryModal({ title: "강점", tone: "strengths", items: summary.strengths || [] })}
                             >
-                                <span>강점</span>
-                                <strong>{(summary.strengths || []).length}개</strong>
-                                <small>{(summary.strengths || [])[0] || "강점 상세 보기"}</small>
+                                <span>
+                                    <strong>강점 확인</strong>
+                                    <small>잘된 부분 모아보기</small>
+                                </span>
+                                <i aria-hidden="true">→</i>
                             </button>
                             <button
                                 type="button"
-                                className="summary-block summary-card-trigger suggestions"
+                                className="summary-card-trigger suggestions"
                                 onClick={() => setSummaryModal({ title: "개선 제안", tone: "suggestions", items: summary.suggestions || [] })}
                             >
-                                <span>개선 제안</span>
-                                <strong>{(summary.suggestions || []).length}개</strong>
-                                <small>{(summary.suggestions || [])[0] || "개선 제안 상세 보기"}</small>
+                                <span>
+                                    <strong>개선점 확인</strong>
+                                    <small>다음 연습 포인트 보기</small>
+                                </span>
+                                <i aria-hidden="true">→</i>
                             </button>
                         </div>
                     </div>
