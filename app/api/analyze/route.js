@@ -16,12 +16,16 @@ export const runtime = "nodejs";
 const FILE_PROCESSING_POLL_MS = 1500;
 const VIDEO_PROCESSING_MAX_WAIT_MS = 180000;
 const MATERIAL_PROCESSING_MAX_WAIT_MS = 45000;
-const CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "global";
+const CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "us";
 const CHIRP_STT_MODEL = process.env.CHIRP_STT_MODEL || "chirp_3";
 const CHIRP_STT_LANGUAGE = process.env.CHIRP_STT_LANGUAGE || "ko-KR";
 const CHIRP_STT_POLL_MS = 5000;
-const CHIRP_STT_MAX_WAIT_MS = Number(process.env.CHIRP_STT_MAX_WAIT_MS || 120000);
+const CHIRP_STT_MAX_WAIT_MS = Number(process.env.CHIRP_STT_MAX_WAIT_MS || 240000);
 const GOOGLE_AUTH_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"];
+const SPEECH_API_BASE =
+    CHIRP_STT_LOCATION === "global"
+        ? "https://speech.googleapis.com/v2"
+        : `https://${CHIRP_STT_LOCATION}-speech.googleapis.com/v2`;
 
 // ── 유틸: JSON 추출 ──────────────────────────────────────────────────────────
 function extractJSON(text) {
@@ -126,7 +130,7 @@ async function getGoogleAuthContext() {
 }
 
 async function fetchSpeechOperation(operationName, authContext) {
-    const response = await fetch(`https://speech.googleapis.com/v2/${operationName}`, {
+    const response = await fetch(`${SPEECH_API_BASE}/${operationName}`, {
         headers: {
             Authorization: `Bearer ${authContext.accessToken}`,
             "x-goog-user-project": authContext.projectId,
@@ -260,7 +264,7 @@ function wordsToUtterances(segments) {
 async function transcribeWithChirp(gcsUri) {
     const authContext = await getGoogleAuthContext();
     const recognizer = `projects/${authContext.projectId}/locations/${CHIRP_STT_LOCATION}/recognizers/_`;
-    const response = await fetch(`https://speech.googleapis.com/v2/${recognizer}:batchRecognize`, {
+    const response = await fetch(`${SPEECH_API_BASE}/${recognizer}:batchRecognize`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",

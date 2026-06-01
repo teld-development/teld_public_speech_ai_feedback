@@ -22,11 +22,14 @@ const FILE_REGISTER_ENDPOINT = `${FILE_API_BASE}/files:register`;
 const FILE_PROCESSING_POLL_MS = 3000;
 const VIDEO_PROCESSING_MAX_WAIT_MS = 300000;
 const MATERIAL_PROCESSING_MAX_WAIT_MS = 120000;
-const CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "global";
+const CHIRP_STT_LOCATION = process.env.CHIRP_STT_LOCATION || "us";
 const CHIRP_STT_MODEL = process.env.CHIRP_STT_MODEL || "chirp_3";
 const CHIRP_STT_LANGUAGE = process.env.CHIRP_STT_LANGUAGE || "ko-KR";
-const CHIRP_STT_POLL_MS = 5000;
-const CHIRP_STT_MAX_WAIT_MS = Number(process.env.CHIRP_STT_MAX_WAIT_MS || 180000);
+const STT_OUTPUT_PREFIX = "speech-transcripts";
+const SPEECH_API_BASE =
+  CHIRP_STT_LOCATION === "global"
+    ? "https://speech.googleapis.com/v2"
+    : `https://${CHIRP_STT_LOCATION}-speech.googleapis.com/v2`;
 const GCS_READ_SCOPES = [
   "https://www.googleapis.com/auth/devstorage.read_only",
   "https://www.googleapis.com/auth/cloud-platform",
@@ -90,6 +93,31 @@ function makeGcsUri(bucket, storagePath) {
   return `gs://${cleanBucket}/${cleanPath}`;
 }
 
+function parseGcsUri(gcsUri) {
+  const match = String(gcsUri || "").match(/^gs:\/\/([^/]+)\/(.+)$/);
+  if (!match) {
+    throw new Error(`GCS URI 형식이 올바르지 않습니다: ${gcsUri || "(empty)"}`);
+  }
+  return { bucket: match[1], path: match[2] };
+}
+
+function compactPathPart(value, fallback) {
+  return String(value || fallback)
+    .replace(/[^a-zA-Z0-9_.-]/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 120);
+}
+
+function makeTranscriptOutputUri(bucket, uid, presentationId, attemptId) {
+  return makeGcsUri(bucket, [
+    STT_OUTPUT_PREFIX,
+    compactPathPart(uid, "unknown-user"),
+    compactPathPart(presentationId, "unknown-presentation"),
+    compactPathPart(attemptId, "unknown-attempt"),
+    "",
+  ].join("/"));
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -134,7 +162,7 @@ async function getGoogleAuthContext() {
 }
 
 async function fetchSpeechOperation(operationName, authContext) {
-  const response = await fetch(`https://speech.googleapis.com/v2/${operationName}`, {
+  const response = await fetch(`${SPEECH_API_BASE}/${operationName}`, {
     headers: {
       Authorization: `Bearer ${authContext.accessToken}`,
       "x-goog-user-project": authContext.projectId,
@@ -151,6 +179,43 @@ async function fetchSpeechOperation(operationName, authContext) {
 }
 
 function normalizeSpeechResults(batchPayload, gcsUri) {
+  if (Array.isArray(batchPayload?.results)) {
+    const segments = batchPayload.results
+      .map((result, index) => {
+        const alternative = result.alternatives?.[0] || {};
+        const words = Array.isArray(alternative.words)
+          ? alternative.words
+              .map((word) => ({
+                word: word.word || "",
+                startSec: parseDurationSeconds(word.startOffset),
+                endSec: parseDurationSeconds(word.endOffset),
+                speaker: word.speakerLabel || word.speakerTag || null,
+              }))
+              .filter((word) => word.word)
+          : [];
+
+        const startSec = words.find((word) => word.startSec != null)?.startSec
+          ?? (index === 0 ? 0 : null);
+        const endSec = [...words].reverse().find((word) => word.endSec != null)?.endSec
+          ?? parseDurationSeconds(result.resultEndOffset)
+          ?? startSec;
+
+        return {
+          text: alternative.transcript || "",
+          languageCode: result.languageCode || "",
+          startSec,
+          endSec,
+          words,
+        };
+      })
+      .filter((segment) => segment.text || segment.words.length);
+
+    return {
+      segments,
+      text: segments.map((segment) => segment.text).filter(Boolean).join("\n").trim(),
+    };
+  }
+
   const fileResult = batchPayload?.results?.[gcsUri] || Object.values(batchPayload?.results || {})[0] || null;
   const transcriptResults = fileResult?.transcript?.results || fileResult?.results || [];
 
@@ -187,6 +252,21 @@ function normalizeSpeechResults(batchPayload, gcsUri) {
   return {
     segments,
     text: segments.map((segment) => segment.text).filter(Boolean).join("\n").trim(),
+  };
+}
+
+function buildTranscriptFromBatchPayload(batchPayload, gcsUri, extra = {}) {
+  const normalized = normalizeSpeechResults(batchPayload, gcsUri);
+  const utterances = wordsToUtterances(normalized.segments);
+  return {
+    model: CHIRP_STT_MODEL,
+    languageCode: CHIRP_STT_LANGUAGE,
+    location: CHIRP_STT_LOCATION,
+    text: normalized.text || utterances.map((utterance) => utterance.text).join("\n").trim(),
+    utterances,
+    segmentCount: normalized.segments.length,
+    createdAt: new Date().toISOString(),
+    ...extra,
   };
 }
 
@@ -265,10 +345,10 @@ function wordsToUtterances(segments) {
     });
 }
 
-async function transcribeWithChirp(gcsUri, authContext) {
+async function startChirpBatchTranscription(gcsUri, outputUri, authContext) {
   const recognizer = `projects/${authContext.projectId}/locations/${CHIRP_STT_LOCATION}/recognizers/_`;
   const response = await fetch(
-    `https://speech.googleapis.com/v2/${recognizer}:batchRecognize`,
+    `${SPEECH_API_BASE}/${recognizer}:batchRecognize`,
     {
       method: "POST",
       headers: {
@@ -289,7 +369,9 @@ async function transcribeWithChirp(gcsUri, authContext) {
         configMask: "*",
         files: [{ uri: gcsUri }],
         recognitionOutputConfig: {
-          inlineResponseConfig: {},
+          gcsOutputConfig: {
+            uri: outputUri,
+          },
         },
       }),
     }
@@ -304,34 +386,62 @@ async function transcribeWithChirp(gcsUri, authContext) {
     throw new Error("Speech-to-Text operation 이름을 확인하지 못했습니다.");
   }
 
-  const startedAt = Date.now();
-  let current = operation;
-  while (!current.done && Date.now() - startedAt < CHIRP_STT_MAX_WAIT_MS) {
-    await sleep(CHIRP_STT_POLL_MS);
-    current = await fetchSpeechOperation(operation.name, authContext);
-    logger.info("[stt] Waiting for Chirp transcription", {
-      operation: operation.name,
-      elapsedMs: Date.now() - startedAt,
-    });
-  }
-
-  if (!current.done) {
-    throw new Error(`Chirp STT가 ${Math.round(CHIRP_STT_MAX_WAIT_MS / 1000)}초 안에 완료되지 않았습니다.`);
-  }
-  if (current.error) {
-    throw new Error(current.error.message || "Chirp STT operation이 실패했습니다.");
-  }
-
-  const normalized = normalizeSpeechResults(current.response, gcsUri);
-  const utterances = wordsToUtterances(normalized.segments);
   return {
+    name: operation.name,
+    inputUri: gcsUri,
+    outputUri,
     model: CHIRP_STT_MODEL,
     languageCode: CHIRP_STT_LANGUAGE,
     location: CHIRP_STT_LOCATION,
-    text: normalized.text || utterances.map((utterance) => utterance.text).join("\n").trim(),
-    utterances,
-    segmentCount: normalized.segments.length,
     createdAt: new Date().toISOString(),
+  };
+}
+
+async function downloadJsonFromGcsUri(gcsUri) {
+  const { bucket, path } = parseGcsUri(gcsUri);
+  const [buffer] = await admin.storage().bucket(bucket).file(path).download();
+  return JSON.parse(buffer.toString("utf8"));
+}
+
+async function resolveChirpBatchTranscript(operationInfo, authContext) {
+  if (!operationInfo?.name) {
+    return { done: true, transcript: null };
+  }
+
+  const current = await fetchSpeechOperation(operationInfo.name, authContext);
+  if (!current.done) {
+    return { done: false, operation: current };
+  }
+
+  if (current.error) {
+    return {
+      done: true,
+      transcript: {
+        error: current.error.message || "Chirp STT operation이 실패했습니다.",
+        model: CHIRP_STT_MODEL,
+        languageCode: CHIRP_STT_LANGUAGE,
+        location: CHIRP_STT_LOCATION,
+        text: "",
+        utterances: [],
+      },
+    };
+  }
+
+  const fileResult = current.response?.results?.[operationInfo.inputUri]
+    || Object.values(current.response?.results || {})[0]
+    || null;
+
+  const outputResultUri = fileResult?.uri || fileResult?.cloudStorageResult?.uri || "";
+  const batchPayload = outputResultUri
+    ? await downloadJsonFromGcsUri(outputResultUri)
+    : current.response;
+
+  return {
+    done: true,
+    transcript: buildTranscriptFromBatchPayload(batchPayload, operationInfo.inputUri, {
+      operationName: operationInfo.name,
+      outputUri: outputResultUri || operationInfo.outputUri || "",
+    }),
   };
 }
 
@@ -629,6 +739,175 @@ ${conditionList}
   return Array.isArray(parsed.conditionsAnalysis) ? parsed.conditionsAnalysis : [];
 }
 
+function buildAnalysisJob(data, video) {
+  return {
+    video: {
+      bucket: video.bucket || "",
+      storagePath: video.storagePath || "",
+      videoUrl: video.videoUrl || "",
+      fileName: video.fileName || "",
+      mimeType: video.mimeType || "video/mp4",
+    },
+    material: data.material || null,
+    model: data.model || process.env.GEMINI_MODEL || DEFAULT_MODEL,
+    meta: {
+      topic: data.topic || "",
+      audience: data.audience || "",
+      duration: data.duration || "",
+    },
+    feedbackItems: Array.isArray(data.feedbackItems) ? data.feedbackItems : [],
+    conditions: Array.isArray(data.conditions) ? data.conditions : [],
+    simulation: data.simulation || null,
+  };
+}
+
+async function runPresentationAnalysisJob({ uid, presentationId, attemptId, job, transcript }) {
+  const attemptRef = db.doc(`users/${uid}/presentations/${presentationId}/attempts/${attemptId}`);
+  const presentationRef = db.doc(`users/${uid}/presentations/${presentationId}`);
+  const apiKey = getApiKey();
+  const authContext = await getGoogleAuthContext();
+  const video = job.video || {};
+  const material = job.material || null;
+  const model = job.model || process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  const meta = job.meta || {};
+
+  assertStoragePathBelongsToUser(video.storagePath, uid, "영상");
+  const videoGcsUri = makeGcsUri(video.bucket, video.storagePath);
+
+  await attemptRef.set({
+    status: "analyzing",
+    analysisStage: "gemini",
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  logger.info("[analysis] Registering video", { uid, presentationId, attemptId, videoGcsUri });
+  const videoFile = await registerGcsFile(videoGcsUri, video.mimeType || "video/mp4", {
+    maxWaitMs: VIDEO_PROCESSING_MAX_WAIT_MS,
+    label: "영상",
+    authContext,
+  });
+
+  let materialFile = null;
+  if (material?.storagePath) {
+    try {
+      assertStoragePathBelongsToUser(material.storagePath, uid, "발표 자료");
+      const materialGcsUri = makeGcsUri(material.bucket || video.bucket, material.storagePath);
+      materialFile = await registerGcsFile(materialGcsUri, material.mimeType || "application/pdf", {
+        maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
+        label: "발표 자료",
+        authContext,
+      });
+    } catch (error) {
+      logger.warn("[analysis] Material registration failed; continuing without material", {
+        errorMessage: error.message,
+      });
+    }
+  }
+
+  const activeItemIds = Array.isArray(job.feedbackItems) && job.feedbackItems.length > 0
+    ? job.feedbackItems.filter((id) => FEEDBACK_ITEMS_BY_ID[id])
+    : ALL_ITEM_IDS;
+
+  const activeCategories = FEEDBACK_CATEGORIES
+    .map((cat) => ({
+      ...cat,
+      items: cat.items.filter((it) => activeItemIds.includes(it.id)),
+    }))
+    .filter((cat) => cat.items.length > 0);
+
+  logger.info("[analysis] Starting Gemini analysis", {
+    categoryCount: activeCategories.length,
+    hasMaterial: Boolean(materialFile),
+    transcriptUtteranceCount: transcript?.utterances?.length || 0,
+    conditionCount: Array.isArray(job.conditions) ? job.conditions.length : 0,
+  });
+
+  const categoryPromises = activeCategories.map((cat) =>
+    analyzeCategory(apiKey, model, videoFile, cat, meta, authContext, transcript).catch((error) => {
+      logger.error("[analysis] Category failed", { category: cat.id, errorMessage: error.message });
+      return { timestamps: [], scores: {} };
+    })
+  );
+
+  const summaryPromise = analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext, transcript)
+    .catch((error) => {
+      logger.error("[analysis] Summary failed", { errorMessage: error.message });
+      return { overall: "", strengths: [], suggestions: [] };
+    });
+
+  const materialPromise = materialFile
+    ? analyzeMaterial(apiKey, model, videoFile, materialFile, authContext).catch((error) => {
+      logger.error("[analysis] Material analysis failed", { errorMessage: error.message });
+      return null;
+    })
+    : Promise.resolve(null);
+
+  const conditions = Array.isArray(job.conditions) ? job.conditions : [];
+  const conditionsPromise = conditions.length > 0
+    ? analyzeConditions(apiKey, model, videoFile, conditions, authContext).catch((error) => {
+      logger.error("[analysis] Conditions analysis failed", { errorMessage: error.message });
+      return [];
+    })
+    : Promise.resolve([]);
+
+  const [categoryResults, summary, materialAnalysis, conditionsAnalysis] = await Promise.all([
+    Promise.all(categoryPromises),
+    summaryPromise,
+    materialPromise,
+    conditionsPromise,
+  ]);
+
+  const allTimestamps = categoryResults
+    .flatMap((result) => result.timestamps)
+    .sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0));
+  const scores = Object.assign({}, ...categoryResults.map((result) => result.scores));
+  const analysisResult = { timestamps: allTimestamps, scores, summary };
+  if (transcript) analysisResult.transcript = transcript;
+  if (materialAnalysis) analysisResult.materialAnalysis = materialAnalysis;
+  if (conditionsAnalysis.length > 0) analysisResult.conditionsAnalysis = conditionsAnalysis;
+
+  const hasSummary = Boolean(
+    summary?.overall ||
+    summary?.strengths?.length ||
+    summary?.suggestions?.length
+  );
+  const hasAnyResult = allTimestamps.length > 0 || Object.keys(scores).length > 0 || hasSummary;
+  if (!hasAnyResult) {
+    throw new Error("Gemini 분석 결과가 모두 비어 있습니다. 함수 로그의 Category failed/Summary failed 메시지를 확인해주세요.");
+  }
+
+  const scoreAverage = calculateScoreAverage(scores);
+  const categoryAverages = calculateCategoryAverages(scores);
+  const completedPatch = {
+    status: "completed",
+    analysisStage: "completed",
+    analysisResult,
+    scoreAverage,
+    categoryAverages,
+    completedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  if (job.simulation) completedPatch.simulation = job.simulation;
+
+  await attemptRef.set(completedPatch, { merge: true });
+  await presentationRef.set({
+    latestAttemptId: attemptId,
+    latestScoreAverage: scoreAverage,
+    categoryAverages: categoryAverages || buildEmptyCategoryAverages(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  logger.info("[analysis] Completed", {
+    uid,
+    presentationId,
+    attemptId,
+    timestampCount: allTimestamps.length,
+  });
+
+  return analysisResult;
+}
+
 async function failAttempt(uid, presentationId, attemptId, errorMessage, patch = {}) {
   if (!presentationId || !attemptId) return;
   await db
@@ -668,23 +947,49 @@ exports.analyzePresentationFromStorage = onCall(
     }
 
     const attemptRef = db.doc(`users/${uid}/presentations/${presentationId}/attempts/${attemptId}`);
-    const presentationRef = db.doc(`users/${uid}/presentations/${presentationId}`);
-    const apiKey = getApiKey();
-    const model = data.model || process.env.GEMINI_MODEL || DEFAULT_MODEL;
-    const meta = {
-      topic: data.topic || "",
-      audience: data.audience || "",
-      duration: data.duration || "",
-    };
+    const job = buildAnalysisJob(data, video);
 
     try {
+      const existingAttemptSnap = await attemptRef.get();
+      const existingAttempt = existingAttemptSnap.exists ? existingAttemptSnap.data() || {} : {};
+      if (existingAttempt.status === "completed" && existingAttempt.analysisResult) {
+        return { analysisResult: existingAttempt.analysisResult };
+      }
+      if (
+        existingAttempt.status === "analyzing" &&
+        existingAttempt.analysisStage === "transcribing" &&
+        existingAttempt.transcript?.operation?.name
+      ) {
+        return {
+          pending: true,
+          stage: "transcribing",
+          operationName: existingAttempt.transcript.operation.name,
+        };
+      }
+      if (
+        existingAttempt.status === "analyzing" &&
+        existingAttempt.analysisStage === "gemini" &&
+        existingAttempt.analysisJob?.video?.storagePath
+      ) {
+        return {
+          pending: true,
+          stage: "gemini",
+        };
+      }
+      if (existingAttempt.status === "failed") {
+        throw new HttpsError("failed-precondition", existingAttempt.errorMessage || "분석이 실패한 회차입니다.");
+      }
+
       const authContext = await getGoogleAuthContext();
 
       assertStoragePathBelongsToUser(video.storagePath, uid, "영상");
       const videoGcsUri = makeGcsUri(video.bucket, video.storagePath);
+      const transcriptOutputUri = makeTranscriptOutputUri(video.bucket, uid, presentationId, attemptId);
 
       await attemptRef.set({
         status: "analyzing",
+        analysisStage: process.env.ENABLE_CHIRP_STT === "false" ? "gemini" : "transcribing",
+        analysisJob: job,
         video: {
           bucket: video.bucket,
           storagePath: video.storagePath,
@@ -695,149 +1000,40 @@ exports.analyzePresentationFromStorage = onCall(
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      const transcriptPromise = process.env.ENABLE_CHIRP_STT === "false"
-        ? Promise.resolve(null)
-        : transcribeWithChirp(videoGcsUri, authContext).catch((error) => {
-          logger.warn("[stt] Chirp transcription failed; continuing without transcript", {
-            errorMessage: error.message,
-          });
-          return {
-            error: error.message,
-            model: CHIRP_STT_MODEL,
-            languageCode: CHIRP_STT_LANGUAGE,
-            location: CHIRP_STT_LOCATION,
-            text: "",
-            utterances: [],
-          };
+      if (process.env.ENABLE_CHIRP_STT === "false") {
+        const analysisResult = await runPresentationAnalysisJob({
+          uid,
+          presentationId,
+          attemptId,
+          job,
+          transcript: null,
         });
-
-      logger.info("[analysis] Registering video", { uid, presentationId, attemptId, videoGcsUri });
-      const videoFile = await registerGcsFile(videoGcsUri, video.mimeType || "video/mp4", {
-        maxWaitMs: VIDEO_PROCESSING_MAX_WAIT_MS,
-        label: "영상",
-        authContext,
-      });
-
-      let materialFile = null;
-      if (material?.storagePath) {
-        try {
-          assertStoragePathBelongsToUser(material.storagePath, uid, "발표 자료");
-          const materialGcsUri = makeGcsUri(material.bucket || video.bucket, material.storagePath);
-          materialFile = await registerGcsFile(materialGcsUri, material.mimeType || "application/pdf", {
-            maxWaitMs: MATERIAL_PROCESSING_MAX_WAIT_MS,
-            label: "발표 자료",
-            authContext,
-          });
-        } catch (error) {
-          logger.warn("[analysis] Material registration failed; continuing without material", {
-            errorMessage: error.message,
-          });
-        }
+        return { analysisResult };
       }
 
-      const activeItemIds = Array.isArray(data.feedbackItems) && data.feedbackItems.length > 0
-        ? data.feedbackItems.filter((id) => FEEDBACK_ITEMS_BY_ID[id])
-        : ALL_ITEM_IDS;
-
-      const activeCategories = FEEDBACK_CATEGORIES
-        .map((cat) => ({
-          ...cat,
-          items: cat.items.filter((it) => activeItemIds.includes(it.id)),
-        }))
-        .filter((cat) => cat.items.length > 0);
-
-      const transcript = await transcriptPromise;
-
-      logger.info("[analysis] Starting Gemini analysis", {
-        categoryCount: activeCategories.length,
-        hasMaterial: Boolean(materialFile),
-        transcriptUtteranceCount: transcript?.utterances?.length || 0,
-        conditionCount: Array.isArray(data.conditions) ? data.conditions.length : 0,
-      });
-
-      const categoryPromises = activeCategories.map((cat) =>
-        analyzeCategory(apiKey, model, videoFile, cat, meta, authContext, transcript).catch((error) => {
-          logger.error("[analysis] Category failed", { category: cat.id, errorMessage: error.message });
-          return { timestamps: [], scores: {} };
-        })
-      );
-
-      const summaryPromise = analyzeSummary(apiKey, model, videoFile, activeCategories, meta, authContext, transcript)
-        .catch((error) => {
-          logger.error("[analysis] Summary failed", { errorMessage: error.message });
-          return { overall: "", strengths: [], suggestions: [] };
-        });
-
-      const materialPromise = materialFile
-        ? analyzeMaterial(apiKey, model, videoFile, materialFile, authContext).catch((error) => {
-          logger.error("[analysis] Material analysis failed", { errorMessage: error.message });
-          return null;
-        })
-        : Promise.resolve(null);
-
-      const conditions = Array.isArray(data.conditions) ? data.conditions : [];
-      const conditionsPromise = conditions.length > 0
-        ? analyzeConditions(apiKey, model, videoFile, conditions, authContext).catch((error) => {
-          logger.error("[analysis] Conditions analysis failed", { errorMessage: error.message });
-          return [];
-        })
-        : Promise.resolve([]);
-
-      const [categoryResults, summary, materialAnalysis, conditionsAnalysis] = await Promise.all([
-        Promise.all(categoryPromises),
-        summaryPromise,
-        materialPromise,
-        conditionsPromise,
-      ]);
-
-      const allTimestamps = categoryResults
-        .flatMap((result) => result.timestamps)
-        .sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0));
-      const scores = Object.assign({}, ...categoryResults.map((result) => result.scores));
-      const analysisResult = { timestamps: allTimestamps, scores, summary };
-      if (transcript) analysisResult.transcript = transcript;
-      if (materialAnalysis) analysisResult.materialAnalysis = materialAnalysis;
-      if (conditionsAnalysis.length > 0) analysisResult.conditionsAnalysis = conditionsAnalysis;
-
-      const hasSummary = Boolean(
-        summary?.overall ||
-        summary?.strengths?.length ||
-        summary?.suggestions?.length
-      );
-      const hasAnyResult = allTimestamps.length > 0 || Object.keys(scores).length > 0 || hasSummary;
-      if (!hasAnyResult) {
-        throw new Error("Gemini 분석 결과가 모두 비어 있습니다. 함수 로그의 Category failed/Summary failed 메시지를 확인해주세요.");
-      }
-
-      const scoreAverage = calculateScoreAverage(scores);
-      const categoryAverages = calculateCategoryAverages(scores);
-      const completedPatch = {
-        status: "completed",
-        analysisResult,
-        scoreAverage,
-        categoryAverages,
-        completedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-
-      if (data.simulation) completedPatch.simulation = data.simulation;
-
-      await attemptRef.set(completedPatch, { merge: true });
-      await presentationRef.set({
-        latestAttemptId: attemptId,
-        latestScoreAverage: scoreAverage,
-        categoryAverages: categoryAverages || buildEmptyCategoryAverages(),
+      const speechOperation = await startChirpBatchTranscription(videoGcsUri, transcriptOutputUri, authContext);
+      await attemptRef.set({
+        transcript: {
+          status: "processing",
+          operation: speechOperation,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 
-      logger.info("[analysis] Completed", {
+      logger.info("[stt] Chirp batch transcription started", {
         uid,
         presentationId,
         attemptId,
-        timestampCount: allTimestamps.length,
+        operation: speechOperation.name,
+        outputUri: transcriptOutputUri,
       });
 
-      return { analysisResult };
+      return {
+        pending: true,
+        stage: "transcribing",
+        operationName: speechOperation.name,
+      };
     } catch (error) {
       logger.error("[analysis] Failed", {
         uid,
@@ -848,6 +1044,118 @@ exports.analyzePresentationFromStorage = onCall(
       await failAttempt(uid, presentationId, attemptId, error.message, data.simulation ? { simulation: data.simulation } : {});
       if (error instanceof HttpsError) throw error;
       throw new HttpsError("internal", `영상 분석 중 오류가 발생했습니다: ${error.message}`);
+    }
+  }
+);
+
+exports.resumePresentationAnalysis = onCall(
+  {
+    region: DEFAULT_REGION,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    concurrency: 1,
+    maxInstances: 5,
+    secrets: [geminiApiKey],
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+
+    const data = request.data || {};
+    const presentationId = data.presentationId;
+    const attemptId = data.attemptId;
+
+    if (!presentationId || !attemptId) {
+      throw new HttpsError("invalid-argument", "presentationId와 attemptId가 필요합니다.");
+    }
+
+    const attemptRef = db.doc(`users/${uid}/presentations/${presentationId}/attempts/${attemptId}`);
+
+    try {
+      const attemptSnap = await attemptRef.get();
+      if (!attemptSnap.exists) {
+        throw new HttpsError("not-found", "분석 회차를 찾을 수 없습니다.");
+      }
+
+      const attempt = attemptSnap.data() || {};
+      if (attempt.status === "completed" && attempt.analysisResult) {
+        return { analysisResult: attempt.analysisResult };
+      }
+      if (attempt.status === "failed") {
+        throw new HttpsError("failed-precondition", attempt.errorMessage || "분석이 실패한 회차입니다.");
+      }
+
+      const job = attempt.analysisJob;
+      if (!job?.video?.storagePath) {
+        throw new Error("이어받을 분석 작업 정보를 찾지 못했습니다.");
+      }
+
+      const authContext = await getGoogleAuthContext();
+      const operationInfo = attempt.transcript?.operation || null;
+      let transcript = null;
+
+      if (process.env.ENABLE_CHIRP_STT !== "false" && operationInfo?.name) {
+        const resolved = await resolveChirpBatchTranscript(operationInfo, authContext);
+        if (!resolved.done) {
+          await attemptRef.set({
+            status: "analyzing",
+            analysisStage: "transcribing",
+            transcript: {
+              ...(attempt.transcript || {}),
+              status: "processing",
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+
+          return {
+            pending: true,
+            stage: "transcribing",
+            operationName: operationInfo.name,
+          };
+        }
+
+        transcript = resolved.transcript;
+        await attemptRef.set({
+          analysisStage: "gemini",
+          transcript: {
+            ...(attempt.transcript || {}),
+            status: transcript?.error ? "failed" : "completed",
+            result: transcript || null,
+            error: transcript?.error || null,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      const analysisResult = await runPresentationAnalysisJob({
+        uid,
+        presentationId,
+        attemptId,
+        job,
+        transcript,
+      });
+
+      return { analysisResult };
+    } catch (error) {
+      logger.error("[analysis] Resume failed", {
+        uid,
+        presentationId,
+        attemptId,
+        errorMessage: error.message,
+      });
+
+      if (error instanceof HttpsError) throw error;
+
+      const attemptSnap = await attemptRef.get().catch(() => null);
+      const attempt = attemptSnap?.exists ? attemptSnap.data() : {};
+      await failAttempt(uid, presentationId, attemptId, error.message, attempt?.analysisJob?.simulation ? {
+        simulation: attempt.analysisJob.simulation,
+      } : {});
+      throw new HttpsError("internal", `영상 분석을 이어서 처리하는 중 오류가 발생했습니다: ${error.message}`);
     }
   }
 );
