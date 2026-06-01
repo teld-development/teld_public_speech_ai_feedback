@@ -61,7 +61,7 @@ export default function AnalysisPage() {
                 setIsLoading(false);
             }
         } else {
-            setError("분석 결과가 없습니다. 영상을 먼저 업로드해주세요.");
+            setError("분석 결과가 없습니다. 대시보드에서 발표 세션을 열고 영상을 먼저 업로드해주세요.");
             setIsLoading(false);
         }
     }, []);
@@ -193,8 +193,8 @@ export default function AnalysisPage() {
                 <div className="loading-container">
                     <h2 className="loading-title">오류</h2>
                     <p className="loading-desc">{error}</p>
-                    <button className="btn-primary" onClick={() => router.push("/upload")} style={{ marginTop: "1rem" }}>
-                        영상 업로드하기
+                    <button className="btn-primary" onClick={() => router.push("/dashboard")} style={{ marginTop: "1rem" }}>
+                        대시보드로 이동
                     </button>
                 </div>
             </main>
@@ -251,7 +251,7 @@ export default function AnalysisPage() {
                 </div>
                 <div className="header-actions">
                     <button className="btn-outline" onClick={() => router.push("/dashboard")}>대시보드</button>
-                    <button className="btn-primary-sm" onClick={() => router.push("/prepare")}>새 영상 분석</button>
+                    <button className="btn-primary-sm" onClick={() => router.push("/dashboard")}>새 연습 시작</button>
                 </div>
             </header>
 

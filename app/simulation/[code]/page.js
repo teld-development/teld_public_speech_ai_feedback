@@ -332,8 +332,8 @@ export default function SimulationWaitingPage({ params }) {
                     </div>
                     <h1 className="sim-wait-title">연결 오류</h1>
                     <p className="sim-wait-error">{error}</p>
-                    <button className="btn-primary" onClick={() => router.push("/prepare")}>
-                        다시 시도하기
+                    <button className="btn-primary" onClick={() => router.push(simulationData?.presentationId ? `/presentations/${simulationData.presentationId}` : "/dashboard")}>
+                        발표 세션으로 이동
                     </button>
                 </div>
             </main>

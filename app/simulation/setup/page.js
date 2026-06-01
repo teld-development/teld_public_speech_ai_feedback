@@ -182,10 +182,7 @@ function SimulationSetupPageContent() {
             return;
         }
 
-        const saved = sessionStorage.getItem("prepareData");
-        if (!saved) { router.replace("/prepare"); return; }
-        try { setPrepareData(JSON.parse(saved)); }
-        catch { router.replace("/prepare"); }
+        router.replace("/dashboard");
     }, [authLoading, presentationId, router, user]);
 
     const totalRatio = Object.values(ratios).reduce((s, v) => s + v, 0);

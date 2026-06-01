@@ -272,7 +272,7 @@ export default function AnalysisTestPage() {
                         <li><b>짧은 데이터</b>: 일반적인 분석 결과 - 정상 길이로 모든 영역 표시</li>
                         <li><b>긴 종합 피드백</b>: 종합 피드백 박스가 스크롤 되는지 테스트</li>
                         <li><b>최소 데이터</b>: 데이터가 거의 없을 때 fallback 동작 확인</li>
-                        <li>실제 Unity 결과를 보려면 정상 흐름(/login → /prepare → /simulation/setup → 6자리 코드 → 유니티 발표)으로 진행해야 합니다.</li>
+                        <li>실제 Unity 결과를 보려면 대시보드에서 발표 세션을 열고 시뮬레이션을 시작한 뒤, 6자리 코드를 유니티에서 입력해 진행해야 합니다.</li>
                     </ul>
                 </details>
             </div>
