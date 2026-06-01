@@ -3,6 +3,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
 
 function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
@@ -111,6 +114,7 @@ function buildTimingStatus(expectedSeconds, actualSeconds) {
 
 export default function AnalysisPage() {
     const router = useRouter();
+    const { user } = useAuth();
     const videoRef = useRef(null);
     const chatEndRef = useRef(null);
 
@@ -129,6 +133,11 @@ export default function AnalysisPage() {
     const [selectedByCategory, setSelectedByCategory] = useState(() => buildInitialSelections());
     const [expectedDurationText, setExpectedDurationText] = useState("");
     const [actualVideoSeconds, setActualVideoSeconds] = useState(null);
+    const [analysisContext, setAnalysisContext] = useState(null);
+    const [reflectionNote, setReflectionNote] = useState("");
+    const [savedReflectionNote, setSavedReflectionNote] = useState("");
+    const [savingReflection, setSavingReflection] = useState(false);
+    const [reflectionStatus, setReflectionStatus] = useState("");
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -141,6 +150,14 @@ export default function AnalysisPage() {
                 setAnalysisData(result);
                 setVideoUrl(savedVideoUrl);
                 setVideoName(savedVideoName || "업로드된 영상");
+
+                const savedAnalysisContext = sessionStorage.getItem("analysisContext");
+                if (savedAnalysisContext) {
+                    const context = JSON.parse(savedAnalysisContext);
+                    setAnalysisContext(context);
+                    setReflectionNote(context.reflectionNote || "");
+                    setSavedReflectionNote(context.reflectionNote || "");
+                }
 
                 const savedPrepareData = sessionStorage.getItem("prepareData");
                 if (savedPrepareData) {
@@ -353,6 +370,49 @@ export default function AnalysisPage() {
         return "선택한 타임스탬프 피드백을 기준으로 다음 연습에서 같은 장면을 다시 확인해보세요.";
     };
 
+    const addReflectionPrompt = (prompt) => {
+        setReflectionNote((prev) => {
+            const prefix = prev.trim() ? `${prev.trim()}\n\n` : "";
+            return `${prefix}${prompt}\n`;
+        });
+    };
+
+    const handleSaveReflection = async () => {
+        if (!user || !analysisContext?.presentationId || !analysisContext?.attemptId || savingReflection) return;
+        setSavingReflection(true);
+        setReflectionStatus("");
+        try {
+            const note = reflectionNote.trim();
+            const attemptRef = doc(
+                db,
+                "users",
+                user.uid,
+                "presentations",
+                analysisContext.presentationId,
+                "attempts",
+                analysisContext.attemptId
+            );
+            await updateDoc(attemptRef, {
+                reflectionNote: note,
+                reflectionUpdatedAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            });
+            const nextContext = { ...analysisContext, reflectionNote: note };
+            setAnalysisContext(nextContext);
+            setSavedReflectionNote(note);
+            sessionStorage.setItem("analysisContext", JSON.stringify(nextContext));
+            setReflectionStatus("저장되었습니다.");
+        } catch (err) {
+            console.error("[Analysis] 성찰 노트 저장 실패:", err);
+            setReflectionStatus("저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
+        } finally {
+            setSavingReflection(false);
+        }
+    };
+
+    const canSaveReflection = Boolean(user && analysisContext?.presentationId && analysisContext?.attemptId);
+    const reflectionDirty = reflectionNote.trim() !== savedReflectionNote.trim();
+
     return (
         <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
             <header className="analysis-header-v2">
@@ -419,6 +479,50 @@ export default function AnalysisPage() {
                                     {(summary.suggestions || []).map((item, idx) => (<li key={idx}>{item}</li>))}
                                 </ul>
                             </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="reflection-note-section">
+                    <div className="reflection-note-copy">
+                        <span>성찰 노트</span>
+                        <h2>이번 연습에서 남길 것</h2>
+                        <p>분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.</p>
+                    </div>
+                    <div className="reflection-note-editor">
+                        <div className="reflection-prompt-row">
+                            {[
+                                "오늘 가장 잘 된 점은?",
+                                "다음 연습에서 바꿀 점은?",
+                                "기억하고 싶은 피드백은?",
+                            ].map((prompt) => (
+                                <button key={prompt} type="button" onClick={() => addReflectionPrompt(prompt)}>
+                                    {prompt}
+                                </button>
+                            ))}
+                        </div>
+                        <textarea
+                            value={reflectionNote}
+                            onChange={(event) => {
+                                setReflectionNote(event.target.value);
+                                setReflectionStatus("");
+                            }}
+                            placeholder="예: 결론에서 핵심 문장을 더 또렷하게 정리해야겠다. 다음 연습에서는 마지막 30초를 따로 반복해보기."
+                            rows={5}
+                        />
+                        <div className="reflection-note-actions">
+                            <span>
+                                {canSaveReflection
+                                    ? reflectionStatus || (reflectionDirty ? "저장되지 않은 변경사항이 있습니다." : "회차 기록에 저장됩니다.")
+                                    : "발표 세션에서 열린 분석 결과만 저장할 수 있습니다."}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleSaveReflection}
+                                disabled={!canSaveReflection || savingReflection || !reflectionDirty}
+                            >
+                                {savingReflection ? "저장 중..." : "성찰 저장"}
+                            </button>
                         </div>
                     </div>
                 </section>

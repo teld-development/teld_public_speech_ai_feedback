@@ -112,6 +112,7 @@ export default function FeedbackDemoPage() {
     const [selectedByCategory, setSelectedByCategory] = useState(getInitialSelections);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatInput, setChatInput] = useState("");
+    const [demoReflectionNote, setDemoReflectionNote] = useState("결론에서 핵심 문장을 더 또렷하게 정리해야겠다. 다음 연습에서는 마지막 30초를 따로 반복해보기.");
 
     const totalFeedbackCount = useMemo(
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
@@ -178,6 +179,36 @@ export default function FeedbackDemoPage() {
                                     ))}
                                 </ul>
                             </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="reflection-note-section">
+                    <div className="reflection-note-copy">
+                        <span>성찰 노트</span>
+                        <h2>이번 연습에서 남길 것</h2>
+                        <p>분석을 보고 떠오른 생각을 회차 기록에 남겨두세요.</p>
+                    </div>
+                    <div className="reflection-note-editor">
+                        <div className="reflection-prompt-row">
+                            {["오늘 가장 잘 된 점은?", "다음 연습에서 바꿀 점은?", "기억하고 싶은 피드백은?"].map((prompt) => (
+                                <button
+                                    key={prompt}
+                                    type="button"
+                                    onClick={() => setDemoReflectionNote((prev) => `${prev.trim()}\n\n${prompt}\n`)}
+                                >
+                                    {prompt}
+                                </button>
+                            ))}
+                        </div>
+                        <textarea
+                            value={demoReflectionNote}
+                            onChange={(event) => setDemoReflectionNote(event.target.value)}
+                            rows={5}
+                        />
+                        <div className="reflection-note-actions">
+                            <span>더미 화면입니다. 실제 분석 화면에서는 회차 기록에 저장됩니다.</span>
+                            <button type="button" disabled>성찰 저장</button>
                         </div>
                     </div>
                 </section>

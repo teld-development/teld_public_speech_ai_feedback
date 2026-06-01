@@ -171,6 +171,7 @@ export default function AnalysisTestPage() {
             duration: "3분",
             feedbackItems: ALL_ITEM_IDS,
         }));
+        sessionStorage.removeItem("analysisContext");
         router.push("/analysis");
     };
 
@@ -179,6 +180,7 @@ export default function AnalysisTestPage() {
         sessionStorage.removeItem("videoName");
         sessionStorage.removeItem("videoUrl");
         sessionStorage.removeItem("prepareData");
+        sessionStorage.removeItem("analysisContext");
         alert("sessionStorage 초기화 완료");
     };
 

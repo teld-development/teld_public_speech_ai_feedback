@@ -1232,8 +1232,7 @@
 
 .attempt-row {
   display: flex;
-  align-items: stretch;
-  gap: 10px;
+  flex-direction: column;
   width: 100%;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -1242,6 +1241,13 @@
   text-align: left;
   font-family: inherit;
   overflow: hidden;
+}
+
+.attempt-row-top {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
 }
 
 .attempt-row:hover {
@@ -1347,6 +1353,44 @@
 
 .attempt-delete-btn:hover {
   background: #fef2f2;
+}
+
+.attempt-reflection-preview {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  width: calc(100% - 32px);
+  margin: 0 16px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px 12px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.attempt-reflection-preview:hover {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+
+.attempt-reflection-preview span {
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.attempt-reflection-preview p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 @media (max-width: 720px) {
@@ -5068,6 +5112,123 @@ a {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.reflection-note-section {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.32fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  padding: 22px 24px;
+}
+
+.reflection-note-copy span {
+  display: block;
+  margin-bottom: 8px;
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.reflection-note-copy h2 {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 850;
+}
+
+.reflection-note-copy p {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.reflection-note-editor {
+  min-width: 0;
+}
+
+.reflection-prompt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.reflection-prompt-row button {
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  padding: 7px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.reflection-prompt-row button:hover {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.reflection-note-editor textarea {
+  width: 100%;
+  min-height: 128px;
+  resize: vertical;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fbfdff;
+  color: #0f172a;
+  padding: 13px 14px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  outline: none;
+}
+
+.reflection-note-editor textarea:focus {
+  border-color: #818cf8;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14);
+}
+
+.reflection-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.reflection-note-actions span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.reflection-note-actions button {
+  flex: 0 0 auto;
+  border: 1px solid #4f46e5;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #ffffff;
+  padding: 9px 13px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.reflection-note-actions button:disabled {
+  cursor: not-allowed;
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #64748b;
 }
 
 /* Lesson Plan Analysis Section */
@@ -11650,6 +11811,20 @@ a {
 
 /* Responsive */
 @media (max-width: 720px) {
+  .reflection-note-section {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .reflection-note-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reflection-note-actions button {
+    width: 100%;
+  }
+
   .db-main {
     padding: 20px;
   }

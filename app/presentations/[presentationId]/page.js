@@ -369,6 +369,12 @@ export default function PresentationDetailPage({ params }) {
             duration: presentation.duration || "",
             feedbackItems: attempt.analysisResult?.feedbackItems || [],
         }));
+        sessionStorage.setItem("analysisContext", JSON.stringify({
+            presentationId,
+            attemptId: attempt.id,
+            attemptNo: attempt.attemptNo || null,
+            reflectionNote: attempt.reflectionNote || "",
+        }));
         router.push("/analysis");
     };
 
@@ -993,35 +999,47 @@ export default function PresentationDetailPage({ params }) {
                                     key={attempt.id}
                                     className={`attempt-row attempt-row-${statusMeta(attempt.status).tone}`}
                                 >
-                                    <button
-                                        type="button"
-                                        className="attempt-row-main"
-                                        disabled={attempt.status !== "completed"}
-                                        onClick={() => openAttemptAnalysis(attempt)}
-                                    >
-                                        <div>
-                                            <strong>{attempt.attemptNo}회차</strong>
-                                            <span>{sourceLabel(attempt.sourceType)}</span>
-                                        </div>
-                                        <div className="attempt-status-block">
-                                            <span className={`attempt-status-badge attempt-status-${statusMeta(attempt.status).tone}`}>
-                                                {statusMeta(attempt.status).label}
-                                            </span>
-                                            <strong>
-                                                {attempt.status === "completed"
-                                                    ? `${formatScore(attempt.scoreAverage)}/5`
-                                                    : attempt.errorMessage || ""}
-                                            </strong>
-                                            <span>{formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt)}</span>
-                                        </div>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="attempt-delete-btn"
-                                        onClick={() => handleDeleteAttempt(attempt)}
-                                    >
-                                        삭제
-                                    </button>
+                                    <div className="attempt-row-top">
+                                        <button
+                                            type="button"
+                                            className="attempt-row-main"
+                                            disabled={attempt.status !== "completed"}
+                                            onClick={() => openAttemptAnalysis(attempt)}
+                                        >
+                                            <div>
+                                                <strong>{attempt.attemptNo}회차</strong>
+                                                <span>{sourceLabel(attempt.sourceType)}</span>
+                                            </div>
+                                            <div className="attempt-status-block">
+                                                <span className={`attempt-status-badge attempt-status-${statusMeta(attempt.status).tone}`}>
+                                                    {statusMeta(attempt.status).label}
+                                                </span>
+                                                <strong>
+                                                    {attempt.status === "completed"
+                                                        ? `${formatScore(attempt.scoreAverage)}/5`
+                                                        : attempt.errorMessage || ""}
+                                                </strong>
+                                                <span>{formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt)}</span>
+                                            </div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="attempt-delete-btn"
+                                            onClick={() => handleDeleteAttempt(attempt)}
+                                        >
+                                            삭제
+                                        </button>
+                                    </div>
+                                    {attempt.reflectionNote && (
+                                        <button
+                                            type="button"
+                                            className="attempt-reflection-preview"
+                                            onClick={() => openAttemptAnalysis(attempt)}
+                                        >
+                                            <span>성찰</span>
+                                            <p>{attempt.reflectionNote}</p>
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>

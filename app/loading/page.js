@@ -421,6 +421,14 @@ export default function LoadingPage() {
                     duration: prepareData.duration || "",
                     feedbackItems: prepareData.feedbackItems || [],
                 }));
+                if (presentationId && attemptId) {
+                    sessionStorage.setItem("analysisContext", JSON.stringify({
+                        presentationId,
+                        attemptId,
+                        attemptNo: videoData.attemptNo || null,
+                        reflectionNote: "",
+                    }));
+                }
 
                 // 비디오 URL 저장 (재생용)
                 const videoUrl = blob ? URL.createObjectURL(blob) : blobResult.url;
