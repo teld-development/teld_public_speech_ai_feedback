@@ -238,22 +238,39 @@ function SimulationSetupPageContent() {
                     ownerEmail: mat.ownerEmail || user.email || "",
                 };
 
-                // ★ PDF → 이미지 변환 + 업로드 (비동기, 1.5x 배율)
-                try {
-                    setLoadingMsg("PDF를 슬라이드 이미지로 변환 중...");
-                    const result = await convertAndUploadPdfFromUrl(mat.url, code, {
-                        ownerUid: user.uid,
-                        onProgress: (p) => {
-                            const phaseKr = p.phase === "convert" ? "변환" : "업로드";
-                            setLoadingMsg(`슬라이드 ${phaseKr} 중... (${p.current}/${p.total})`);
-                        },
-                    });
-                    slideImageUrls = result.slideImageUrls;
-                    console.log(`[Setup] PDF 이미지 변환 완료: ${slideImageUrls.length}장`);
-                    setLoadingMsg("시뮬레이션 준비 중...");
-                } catch (convErr) {
-                    console.error("[Setup] PDF 이미지 변환 실패 (PDF 원본만 사용):", convErr);
-                    // 변환 실패해도 PDF 원본 URL은 있으므로 유니티 측 fallback 가능
+                // ★ PDF → 이미지 변환 + 업로드 — '완전히 준비될 때까지' 보장.
+                //   slideImageUrls 가 완성돼야만 아래에서 시뮬레이션을 만든다(불완전 진행/슬라이드 누락 방지).
+                //   끝까지 실패하면 코드 생성을 '차단'하고 재시도를 유도한다(슬라이드 없이 진행 누수 차단).
+                const CONVERT_TRIES = 3;
+                let convertOk = false;
+                for (let convAttempt = 1; convAttempt <= CONVERT_TRIES; convAttempt++) {
+                    try {
+                        setLoadingMsg(convAttempt === 1
+                            ? "PDF를 슬라이드 이미지로 변환 중..."
+                            : `슬라이드 변환 재시도 중... (${convAttempt}/${CONVERT_TRIES})`);
+                        const result = await convertAndUploadPdfFromUrl(mat.url, code, {
+                            ownerUid: user.uid,
+                            onProgress: (p) => {
+                                const phaseKr = p.phase === "convert" ? "변환" : "업로드";
+                                setLoadingMsg(`슬라이드 ${phaseKr} 중... (${p.current}/${p.total})`);
+                            },
+                        });
+                        slideImageUrls = result.slideImageUrls || [];
+                        if (slideImageUrls.length === 0) throw new Error("변환 결과 0장");
+                        console.log(`[Setup] PDF 이미지 변환 완료: ${slideImageUrls.length}장`);
+                        setLoadingMsg("시뮬레이션 준비 중...");
+                        convertOk = true;
+                        break;
+                    } catch (convErr) {
+                        console.error(`[Setup] PDF 이미지 변환 실패 (시도 ${convAttempt}/${CONVERT_TRIES}):`, convErr);
+                        slideImageUrls = [];
+                        if (convAttempt < CONVERT_TRIES) await new Promise((r) => setTimeout(r, 1000 * convAttempt));
+                    }
+                }
+                if (!convertOk) {
+                    // 끝까지 실패 → 슬라이드 없이 진행시키지 않음. 코드 미생성 + 재시도 유도.
+                    setError("발표 자료(PDF)를 슬라이드로 변환하지 못했습니다. 네트워크 확인 후 [시작]을 다시 눌러주세요.");
+                    return;
                 }
             }
 
