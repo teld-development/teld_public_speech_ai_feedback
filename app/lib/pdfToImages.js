@@ -10,6 +10,46 @@ import { storage } from "./firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 /**
+ * 일시적 실패(네트워크·렌더 hiccup)에 견디도록 fn 을 최대 tries 번 재시도.
+ * 모든 시도 실패 시 마지막 에러를 throw (호출부에서 all-or-nothing 처리).
+ */
+async function withRetry(fn, { tries = 3, label = "" } = {}) {
+    let lastErr;
+    for (let attempt = 1; attempt <= tries; attempt++) {
+        try {
+            return await fn();
+        } catch (e) {
+            lastErr = e;
+            console.warn(`[pdfToImages] ${label} 실패 (시도 ${attempt}/${tries}):`, e?.message || e);
+            if (attempt < tries) await new Promise((r) => setTimeout(r, 400 * attempt));
+        }
+    }
+    throw lastErr;
+}
+
+/** PDF 한 페이지를 PNG Blob 으로 렌더 (실패 시 throw → withRetry 로 재시도). */
+async function renderPageToBlob(pdf, pageNum, scale) {
+    const page = await pdf.getPage(pageNum);
+    try {
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        ctx.fillStyle = "#ffffff"; // 흰색 배경 (PDF 투명 처리 방지)
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.92));
+        canvas.width = 0; // 메모리 정리
+        canvas.height = 0;
+        if (!blob) throw new Error("canvas.toBlob 결과가 비어있음(null)");
+        return blob;
+    } finally {
+        page.cleanup();
+    }
+}
+
+/**
  * PDF 바이트 배열을 PNG 이미지 Blob 배열로 변환.
  * @param {Uint8Array | ArrayBuffer} pdfBytes - PDF 파일 바이트
  * @param {Object} options
@@ -31,30 +71,12 @@ export async function pdfToImageBlobs(pdfBytes, { scale = 1.5, onProgress } = {}
     const blobs = [];
     for (let i = 1; i <= totalPages; i++) {
         if (onProgress) onProgress({ current: i - 1, total: totalPages });
-
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale });
-
-        const canvas = document.createElement("canvas");
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext("2d", { alpha: false });
-
-        // 흰색 배경 (PDF 투명 처리 방지)
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        await page.render({ canvasContext: ctx, viewport }).promise;
-
-        const blob = await new Promise((resolve) =>
-            canvas.toBlob(resolve, "image/png", 0.92)
-        );
+        // ★ 페이지별 재시도 — 한 페이지 렌더 hiccup 으로 전체가 실패하지 않게
+        const blob = await withRetry(() => renderPageToBlob(pdf, i, scale), {
+            tries: 3,
+            label: `page ${i} 변환`,
+        });
         blobs.push(blob);
-
-        // 메모리 정리
-        canvas.width = 0;
-        canvas.height = 0;
-        page.cleanup();
     }
 
     if (onProgress) onProgress({ current: totalPages, total: totalPages });
@@ -73,9 +95,12 @@ export async function pdfBase64ToImageBlobs(base64, options) {
 }
 
 export async function pdfUrlToImageBlobs(url, options) {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`PDF 다운로드 실패: HTTP ${response.status}`);
-    const buffer = await response.arrayBuffer();
+    // ★ PDF 다운로드 재시도 — 일시적 네트워크 실패 흡수
+    const buffer = await withRetry(async () => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`PDF 다운로드 실패: HTTP ${response.status}`);
+        return response.arrayBuffer();
+    }, { tries: 3, label: "PDF 다운로드" });
     return pdfToImageBlobs(buffer, options);
 }
 
@@ -111,8 +136,9 @@ export async function uploadSlideImages(blobs, simulationCode, optionsOrProgress
             const storageRef = ref(storage, `${basePath}/${fileName}`);
             const metadata = { contentType: "image/png" };
             if (ownerUid) metadata.customMetadata = { ownerUid };
-            await uploadBytes(storageRef, blob, metadata);
-            const url = await getDownloadURL(storageRef);
+            // ★ 업로드/URL 발급 재시도 — 일시적 네트워크 실패 흡수
+            await withRetry(() => uploadBytes(storageRef, blob, metadata), { tries: 3, label: `slide ${pageNum} 업로드` });
+            const url = await withRetry(() => getDownloadURL(storageRef), { tries: 3, label: `slide ${pageNum} URL` });
             done += 1;
             if (onProgress) onProgress({ current: done, total });
             return url;
