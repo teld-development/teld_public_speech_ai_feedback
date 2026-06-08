@@ -5412,10 +5412,7 @@ a {
 }
 
 .reflection-step-panel {
-  display: grid;
-  grid-template-columns: minmax(170px, 0.28fr) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
+  display: block;
 }
 
 .reflection-step-copy h3 {
@@ -5434,7 +5431,7 @@ a {
 
 .reflection-step-panel textarea {
   width: 100%;
-  min-height: 132px;
+  min-height: 260px;
   resize: vertical;
   border: 1px solid #dbe3ef;
   border-radius: 8px;
@@ -5485,6 +5482,88 @@ a {
   border-color: #cbd5e1;
   background: #e2e8f0;
   color: #64748b;
+}
+
+.reflection-note-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(8px);
+}
+
+.reflection-note-modal {
+  width: min(960px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  display: flex;
+  flex-direction: column;
+}
+
+.reflection-note-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.reflection-note-modal-header span {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.reflection-note-modal-header h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 20px;
+  font-weight: 850;
+}
+
+.reflection-note-modal-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.reflection-note-modal-header button {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #dbe3ef;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #475569;
+  font-family: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reflection-note-modal-header button:hover {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.reflection-note-modal-body {
+  overflow-y: auto;
+  border-top: 0;
+  padding: 20px 24px 24px;
 }
 
 /* Lesson Plan Analysis Section */
@@ -6018,6 +6097,37 @@ a {
    AI REFLECTION CHAT PANEL
 ============================================= */
 
+.reflection-note-toggle-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 86px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 18px;
+  border: 1px solid #99f6e4;
+  border-radius: 50px;
+  background: #ffffff;
+  color: #0f766e;
+  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.18);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, right 0.3s ease;
+}
+
+.reflection-note-toggle-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(15, 118, 110, 0.24);
+}
+
+.reflection-note-toggle-btn.chat-open {
+  right: 400px;
+}
+
 /* Chat Toggle Button */
 .chat-toggle-btn {
   position: fixed;
@@ -6465,6 +6575,36 @@ a {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
+  .reflection-note-toggle-btn {
+    right: 16px;
+    bottom: 72px;
+    padding: 11px 14px;
+  }
+
+  .reflection-note-toggle-btn.chat-open {
+    right: 16px;
+    bottom: auto;
+    top: 72px;
+  }
+
+  .reflection-note-modal-backdrop {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .reflection-note-modal {
+    max-height: calc(100vh - 24px);
+    border-radius: 14px;
+  }
+
+  .reflection-note-modal-header {
+    padding: 18px 16px 14px;
+  }
+
+  .reflection-note-modal-body {
+    padding: 16px;
+  }
+
   .chat-toggle-btn {
     right: 16px;
     bottom: 16px;
