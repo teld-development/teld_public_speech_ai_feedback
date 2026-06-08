@@ -612,8 +612,13 @@ export default function AnalysisPage() {
                             className={bottomTab === "transcript" ? "active" : ""}
                             onClick={() => setBottomTab("transcript")}
                         >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                                <path d="M14 2v5h5" />
+                                <path d="M9 13h6" />
+                                <path d="M9 17h4" />
+                            </svg>
                             <span>전사 자료 보기</span>
-                            <small>{transcript?.error ? "STT 미완료" : `${transcriptUtterances.length}개 발화`}</small>
                         </button>
                         <button
                             type="button"
@@ -622,8 +627,11 @@ export default function AnalysisPage() {
                             className={bottomTab === "feedback" ? "active" : ""}
                             onClick={() => setBottomTab("feedback")}
                         >
-                            <span>피드백 보기</span>
-                            <small>{totalFeedbackAreaCount}개 하위 영역</small>
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 11l3 3L22 4" />
+                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                            </svg>
+                            <span>영역별 피드백 보기</span>
                         </button>
                     </div>
 
@@ -632,9 +640,6 @@ export default function AnalysisPage() {
                         <section className="transcript-section-v2">
                             <div className="timestamps-header">
                                 <h3>발화 기록</h3>
-                                <span className="timestamps-count">
-                                    {transcriptUtterances.length > 0 ? `${transcriptUtterances.length}개 발화` : "STT 미완료"}
-                                </span>
                             </div>
 
                             {transcript?.error ? (
@@ -672,7 +677,6 @@ export default function AnalysisPage() {
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="detailed-feedback-header">
                             <h3>영역별 상세 피드백</h3>
-                            <span className="timestamps-count">{totalFeedbackAreaCount}개 하위 영역</span>
                         </div>
                         <p className="timestamps-hint-v2">카드 헤더의 하위 영역을 선택하면 해당 피드백 내용이 표시됩니다</p>
 
