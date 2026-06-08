@@ -4342,13 +4342,23 @@ a {
 }
 
 .analysis-header-v2 {
-  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 960;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 32px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  gap: 20px;
+  min-height: 72px;
+  padding: 12px 32px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #cbd5e1;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.header-content {
+  min-width: 0;
 }
 
 .header-content h1 {
@@ -4364,7 +4374,61 @@ a {
 
 .header-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 10px;
+}
+
+.header-reflection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: center;
+  padding: 0;
+}
+
+.analysis-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  min-width: 136px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 850;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.analysis-tool-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.analysis-tool-btn.note {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.analysis-tool-btn.note:hover {
+  box-shadow: 0 10px 22px rgba(15, 118, 110, 0.24);
+}
+
+.analysis-tool-btn.ai {
+  border-color: #4f46e5;
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+.analysis-tool-btn.ai:hover,
+.analysis-tool-btn.ai.active {
+  background: #4338ca;
+  box-shadow: 0 10px 22px rgba(79, 70, 229, 0.24);
 }
 
 .btn-outline {
@@ -6097,118 +6161,6 @@ a {
    AI REFLECTION CHAT PANEL
 ============================================= */
 
-.reflection-note-toggle-btn {
-  position: fixed;
-  right: 20px;
-  bottom: 86px;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 48px;
-  padding: 12px 18px;
-  border: 1px solid #99f6e4;
-  border-radius: 50px;
-  background: #ffffff;
-  color: #0f766e;
-  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.18);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, right 0.3s ease;
-}
-
-.reflection-note-toggle-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 30px rgba(15, 118, 110, 0.24);
-}
-
-.reflection-note-toggle-btn.chat-open {
-  right: 400px;
-}
-
-/* Chat Toggle Button */
-.chat-toggle-btn {
-  position: fixed;
-  right: 20px;
-  bottom: 24px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 24px;
-  background: linear-gradient(135deg, #7c3aed 0%, #ec4899 50%, #f97316 100%);
-  background-size: 200% 200%;
-  color: #fff;
-  border: none;
-  border-radius: 50px;
-  cursor: pointer;
-  box-shadow:
-    0 4px 20px rgba(139, 92, 246, 0.5),
-    0 0 30px rgba(236, 72, 153, 0.3);
-  transition: all 0.3s ease;
-  z-index: 1000;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  animation: pulse-glow 2s ease-in-out infinite, gradient-shift 3s ease infinite;
-}
-
-/* 펄스 및 그라디언트 애니메이션 */
-@keyframes pulse-glow {
-
-  0%,
-  100% {
-    box-shadow:
-      0 4px 20px rgba(139, 92, 246, 0.5),
-      0 0 30px rgba(236, 72, 153, 0.3);
-    transform: scale(1);
-  }
-
-  50% {
-    box-shadow:
-      0 6px 30px rgba(139, 92, 246, 0.7),
-      0 0 50px rgba(236, 72, 153, 0.5),
-      0 0 80px rgba(249, 115, 22, 0.3);
-    transform: scale(1.03);
-  }
-}
-
-@keyframes gradient-shift {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-.chat-toggle-btn:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow:
-    0 8px 30px rgba(139, 92, 246, 0.6),
-    0 0 40px rgba(236, 72, 153, 0.5);
-  animation: none;
-}
-
-.chat-toggle-btn.open {
-  padding: 14px;
-  border-radius: 50%;
-  right: 400px;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-  animation: none;
-}
-
-.chat-toggle-label {
-  white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
 /* Main content shift when chat is open */
 .analysis-page-v2.chat-open .analysis-main-v2 {
   margin-right: 380px;
@@ -6254,9 +6206,29 @@ a {
 }
 
 .chat-panel-title h3 {
+  flex: 1;
   font-size: 16px;
   font-weight: 600;
   color: var(--ink);
+}
+
+.chat-panel-close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(139, 92, 246, 0.24);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  color: #6d28d9;
+  font-family: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-panel-close:hover {
+  background: #ffffff;
+  border-color: rgba(109, 40, 217, 0.38);
 }
 
 .chat-panel-desc {
@@ -6575,16 +6547,31 @@ a {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
-  .reflection-note-toggle-btn {
-    right: 16px;
-    bottom: 72px;
-    padding: 11px 14px;
+  .analysis-header-v2 {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px 16px;
   }
 
-  .reflection-note-toggle-btn.chat-open {
-    right: 16px;
-    bottom: auto;
-    top: 72px;
+  .header-content {
+    text-align: center;
+  }
+
+  .header-reflection-actions {
+    justify-self: center;
+    gap: 6px;
+  }
+
+  .analysis-tool-btn {
+    min-width: 112px;
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .header-actions {
+    justify-content: center;
+    gap: 8px;
   }
 
   .reflection-note-modal-backdrop {
@@ -6603,18 +6590,6 @@ a {
 
   .reflection-note-modal-body {
     padding: 16px;
-  }
-
-  .chat-toggle-btn {
-    right: 16px;
-    bottom: 16px;
-    padding: 12px 16px;
-  }
-
-  .chat-toggle-btn.open {
-    right: 16px;
-    bottom: auto;
-    top: 16px;
   }
 
   .reflection-chat-panel {
@@ -6658,9 +6633,8 @@ a {
   }
 
   .analysis-header-v2 {
-    flex-direction: column;
     gap: 12px;
-    align-items: flex-start;
+    align-items: center;
   }
 }
 

@@ -474,6 +474,38 @@ export default function AnalysisPage() {
                     <h1>발표 분석 결과</h1>
                     <p>{videoName}</p>
                 </div>
+                <div className="header-reflection-actions" aria-label="성찰 도구">
+                    <button
+                        type="button"
+                        className="analysis-tool-btn note"
+                        onClick={() => setReflectionOpen(true)}
+                    >
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <path d="M14 2v6h6" />
+                            <path d="M16 13H8" />
+                            <path d="M16 17H8" />
+                            <path d="M10 9H8" />
+                        </svg>
+                        <span>{buildReflectionNote(reflectionFields) ? "성찰 노트" : "노트 작성"}</span>
+                    </button>
+                    <button
+                        type="button"
+                        className={`analysis-tool-btn ai ${isChatOpen ? "active" : ""}`}
+                        onClick={() => setIsChatOpen((value) => !value)}
+                    >
+                        {isChatOpen ? (
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                        ) : (
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            </svg>
+                        )}
+                        <span>{isChatOpen ? "AI 닫기" : "AI 성찰"}</span>
+                    </button>
+                </div>
                 <div className="header-actions">
                     <button className="btn-outline" onClick={() => router.push(sessionPath)}>대시보드</button>
                     <button className="btn-primary-sm" onClick={() => router.push(sessionPath)}>새 연습 시작</button>
@@ -776,46 +808,12 @@ export default function AnalysisPage() {
                 </div>
             )}
 
-            <button
-                type="button"
-                className={`reflection-note-toggle-btn ${isChatOpen ? "chat-open" : ""}`}
-                onClick={() => setReflectionOpen(true)}
-                title="성찰 노트"
-            >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <path d="M14 2v6h6" />
-                    <path d="M16 13H8" />
-                    <path d="M16 17H8" />
-                    <path d="M10 9H8" />
-                </svg>
-                <span className="chat-toggle-label">{buildReflectionNote(reflectionFields) ? "성찰 노트" : "노트 작성"}</span>
-            </button>
-
-            <button
-                className={`chat-toggle-btn ${isChatOpen ? "open" : ""}`}
-                onClick={() => setIsChatOpen(!isChatOpen)}
-                title="AI 성찰 대화"
-            >
-                {isChatOpen ? (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                ) : (
-                    <>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                        <span className="chat-toggle-label">AI 성찰</span>
-                    </>
-                )}
-            </button>
-
             <div className={`reflection-chat-panel ${isChatOpen ? "open" : ""}`}>
                 <div className="chat-panel-header">
                     <div className="chat-panel-title">
                         <span className="chat-icon">🤔</span>
                         <h3>AI 발표 성찰 대화</h3>
+                        <button type="button" className="chat-panel-close" onClick={() => setIsChatOpen(false)} aria-label="AI 성찰 닫기">×</button>
                     </div>
                     <p className="chat-panel-desc">AI와 함께 발표를 되돌아보며 성찰해보세요</p>
                 </div>
