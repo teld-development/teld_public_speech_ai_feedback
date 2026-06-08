@@ -1,4 +1,4 @@
-// 발표 피드백 영역 정의 (3대 영역, 17개 하위 영역)
+// 발표 피드백 영역 정의 (3대 영역, 16개 하위 영역)
 
 export const FEEDBACK_CATEGORIES = [
     {
@@ -23,7 +23,6 @@ export const FEEDBACK_CATEGORIES = [
             { id: "organization_flow", label: "내용 조직 및 흐름", desc: "내용 간 연결이 자연스럽고 체계적인 조직 구조를 활용하였다." },
             { id: "sentence_clarity", label: "문장 완결성 및 명료성", desc: "한 가지 생각이나 내용을 완결된 문장으로 명확하게 전달하였다." },
             { id: "conclusion_structure", label: "결론 구성", desc: "논지를 강화하고 청중이 발표의 마무리를 명확히 인식할 수 있도록 결론을 구성하였다." },
-            { id: "time_management", label: "시간 운영", desc: "발표시간을 초과하지 않고 효과적으로 활용하였다." },
         ],
     },
     {

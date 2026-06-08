@@ -251,9 +251,24 @@ export default function SimulationWaitingPage({ params }) {
                             sessionStorage.setItem("analysisResult", JSON.stringify(analysisResult));
                             sessionStorage.setItem("videoName", `시뮬레이션 (${code})`);
                             sessionStorage.setItem("videoUrl", videoUrl);
+                            if (data.presentationId && data.attemptId) {
+                                sessionStorage.setItem("analysisContext", JSON.stringify({
+                                    presentationId: data.presentationId,
+                                    attemptId: data.attemptId,
+                                    attemptNo: data.attemptNo || null,
+                                    reflectionNote: "",
+                                    reflectionFields: {},
+                                }));
+                            }
                             if (data.feedbackItems) {
                                 sessionStorage.setItem("prepareData", JSON.stringify({
                                     feedbackItems: data.feedbackItems || [],
+                                    duration: data.duration || "",
+                                }));
+                            } else {
+                                sessionStorage.setItem("prepareData", JSON.stringify({
+                                    duration: data.duration || "",
+                                    feedbackItems: [],
                                 }));
                             }
                             router.push("/analysis");

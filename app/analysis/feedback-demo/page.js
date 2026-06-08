@@ -66,6 +66,50 @@ const DUMMY_SUMMARY = {
     ],
 };
 
+const DEMO_EXPECTED_SECONDS = 180;
+const DEMO_ACTUAL_SECONDS = 228;
+const DUMMY_TRANSCRIPT = [
+    { time: "00:03", text: "안녕하세요. 오늘은 생성형 인공지능을 수업 설계에 활용하는 방법을 발표하겠습니다." },
+    { time: "00:17", text: "먼저 교사가 반복적으로 수행하는 준비 작업을 줄이는 사례부터 살펴보겠습니다." },
+    { time: "00:36", text: "예를 들어 학습 목표에 맞춘 질문 생성이나 수준별 활동지를 빠르게 만들 수 있습니다." },
+    { time: "00:58", text: "다만 생성 결과를 그대로 쓰기보다 수업 맥락과 학생 수준에 맞게 조정하는 과정이 필요합니다." },
+    { time: "01:21", text: "두 번째로 피드백 자동화는 학생의 초안을 빠르게 점검하는 데 도움을 줄 수 있습니다." },
+    { time: "01:43", text: "하지만 평가 기준을 교사가 명확하게 제시하지 않으면 피드백의 방향이 흐려질 수 있습니다." },
+    { time: "02:04", text: "마지막으로 데이터 보안과 저작권 문제를 고려해 학교 차원의 사용 원칙을 세워야 합니다." },
+    { time: "02:31", text: "정리하면 인공지능은 수업을 대체하는 도구가 아니라 교사의 판단을 보조하는 도구로 활용되어야 합니다." },
+    { time: "03:12", text: "이상으로 발표를 마치겠습니다. 감사합니다." },
+];
+const DEMO_REFLECTION_STEPS = [
+    {
+        id: "keep",
+        label: "유지할 점",
+        title: "오늘 발표에서 계속 가져갈 점",
+        desc: "잘 작동했던 표현, 구성, 태도, 자료 활용을 적어두세요.",
+        placeholder: "예: 도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+    },
+    {
+        id: "improve",
+        label: "바꿀 점",
+        title: "다음 회차에서 조정할 점",
+        desc: "분석 결과를 보고 가장 먼저 고치고 싶은 한두 가지를 정리하세요.",
+        placeholder: "예: 결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
+    },
+    {
+        id: "next",
+        label: "다음 실행",
+        title: "다음 연습에서 실제로 할 행동",
+        desc: "다음 회차 전에 바로 실행할 수 있는 연습 계획을 적어두세요.",
+        placeholder: "예: 마지막 30초 결론부만 따로 3번 녹화해보기.",
+    },
+];
+
+function formatDuration(seconds) {
+    const rounded = Math.max(0, Math.round(seconds));
+    const mins = Math.floor(rounded / 60);
+    const secs = rounded % 60;
+    return mins > 0 ? `${mins}분 ${secs}초` : `${secs}초`;
+}
+
 function buildDemoFeedback(item, category, index = 0) {
     const baseScore = 3 + (index % 3 === 0 ? 1 : 0);
     return {
@@ -91,11 +135,20 @@ export default function FeedbackDemoPage() {
     const [selectedByCategory, setSelectedByCategory] = useState(getInitialSelections);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatInput, setChatInput] = useState("");
+    const [demoReflectionOpen, setDemoReflectionOpen] = useState(true);
+    const [activeDemoReflectionStep, setActiveDemoReflectionStep] = useState("keep");
+    const [demoReflectionFields, setDemoReflectionFields] = useState({
+        keep: "도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+        improve: "결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
+        next: "마지막 30초 결론부만 따로 3번 녹화해보기.",
+    });
+    const [summaryModal, setSummaryModal] = useState(null);
 
     const totalFeedbackCount = useMemo(
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
         []
     );
+    const activeDemoReflection = DEMO_REFLECTION_STEPS.find((step) => step.id === activeDemoReflectionStep) || DEMO_REFLECTION_STEPS[0];
 
     return (
         <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
@@ -106,10 +159,10 @@ export default function FeedbackDemoPage() {
                 </div>
                 <div className="header-actions">
                     <button type="button" className="btn-outline" onClick={() => router.push("/analysis/test")}>
-                        대시보드
+                        더미 선택
                     </button>
                     <button type="button" className="btn-primary-sm" onClick={() => router.push("/analysis")}>
-                        새 영상 분석
+                        분석 화면
                     </button>
                 </div>
             </header>
@@ -126,31 +179,137 @@ export default function FeedbackDemoPage() {
                     </div>
 
                     <div className="summary-container-v2">
+                        <div className="duration-check-card duration-check-warn">
+                            <div className="duration-check-main">
+                                <span className="duration-check-kicker">발표 시간</span>
+                                <strong>{formatDuration(DEMO_ACTUAL_SECONDS - DEMO_EXPECTED_SECONDS)} 초과</strong>
+                                <span className="duration-check-status">조금 초과</span>
+                            </div>
+                            <div className="duration-check-meta">
+                                <span>예상 {formatDuration(DEMO_EXPECTED_SECONDS)}</span>
+                                <span>실제 {formatDuration(DEMO_ACTUAL_SECONDS)}</span>
+                            </div>
+                        </div>
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{DUMMY_SUMMARY.overall}</p>
 
                         <div className="summary-lists">
-                            <div className="summary-block strengths">
-                                <h4>강점</h4>
-                                <ul>
-                                    {DUMMY_SUMMARY.strengths.map((item, index) => (
-                                        <li key={index}>{item}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                            <div className="summary-block suggestions">
-                                <h4>개선 제안</h4>
-                                <ul>
-                                    {DUMMY_SUMMARY.suggestions.map((item, index) => (
-                                        <li key={index}>{item}</li>
-                                    ))}
-                                </ul>
-                            </div>
+                            <button
+                                type="button"
+                                className="summary-card-trigger strengths"
+                                onClick={() => setSummaryModal({ title: "강점", tone: "strengths", items: DUMMY_SUMMARY.strengths })}
+                            >
+                                <span>
+                                    <strong>강점 확인</strong>
+                                    <small>잘된 부분 모아보기</small>
+                                </span>
+                                <i aria-hidden="true">→</i>
+                            </button>
+                            <button
+                                type="button"
+                                className="summary-card-trigger suggestions"
+                                onClick={() => setSummaryModal({ title: "개선 제안", tone: "suggestions", items: DUMMY_SUMMARY.suggestions })}
+                            >
+                                <span>
+                                    <strong>개선점 확인</strong>
+                                    <small>다음 연습 포인트 보기</small>
+                                </span>
+                                <i aria-hidden="true">→</i>
+                            </button>
                         </div>
                     </div>
                 </section>
 
+                {summaryModal && (
+                    <div className="summary-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setSummaryModal(null);
+                    }}>
+                        <section className={`summary-modal summary-modal-${summaryModal.tone}`} role="dialog" aria-modal="true" aria-labelledby="summary-modal-title">
+                            <header>
+                                <div>
+                                    <span>종합 피드백</span>
+                                    <h2 id="summary-modal-title">{summaryModal.title}</h2>
+                                </div>
+                                <button type="button" onClick={() => setSummaryModal(null)} aria-label="닫기">×</button>
+                            </header>
+                            <ul>
+                                {summaryModal.items.map((item, index) => <li key={index}>{item}</li>)}
+                            </ul>
+                        </section>
+                    </div>
+                )}
+
+                <section className={`reflection-note-section ${demoReflectionOpen ? "open" : ""}`}>
+                    <button
+                        type="button"
+                        className="reflection-note-header"
+                        onClick={() => setDemoReflectionOpen((value) => !value)}
+                        aria-expanded={demoReflectionOpen}
+                    >
+                        <div>
+                            <span>성찰 노트</span>
+                            <h2>이번 회차를 다음 연습으로 연결하기</h2>
+                            <p>유지할 점, 바꿀 점, 다음 실행을 짧게 정리해 회차 기록에 남깁니다.</p>
+                        </div>
+                        <strong>{demoReflectionOpen ? "접기" : "이어쓰기"}</strong>
+                    </button>
+
+                    {demoReflectionOpen && (
+                        <div className="reflection-note-body">
+                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
+                                {DEMO_REFLECTION_STEPS.map((step) => (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={activeDemoReflectionStep === step.id}
+                                        className={activeDemoReflectionStep === step.id ? "active" : ""}
+                                        onClick={() => setActiveDemoReflectionStep(step.id)}
+                                    >
+                                        <span>{step.label}</span>
+                                        {demoReflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="reflection-step-panel">
+                                <div className="reflection-step-copy">
+                                    <h3>{activeDemoReflection.title}</h3>
+                                    <p>{activeDemoReflection.desc}</p>
+                                </div>
+                                <textarea
+                                    value={demoReflectionFields[activeDemoReflection.id] || ""}
+                                    onChange={(event) => setDemoReflectionFields((prev) => ({
+                                        ...prev,
+                                        [activeDemoReflection.id]: event.target.value,
+                                    }))}
+                                    placeholder={activeDemoReflection.placeholder}
+                                    rows={5}
+                                />
+                            </div>
+                            <div className="reflection-note-actions">
+                                <span>더미 화면입니다. 실제 분석 화면에서는 회차 기록에 저장됩니다.</span>
+                                <button type="button" disabled>성찰 저장</button>
+                            </div>
+                        </div>
+                    )}
+                </section>
+
                 <div className="bottom-sections-wrapper">
+                    <section className="transcript-section-v2">
+                        <div className="timestamps-header">
+                            <h3>발화 기록</h3>
+                            <span className="timestamps-count">{DUMMY_TRANSCRIPT.length}개 발화</span>
+                        </div>
+                        <div className="transcript-scroll-container">
+                            {DUMMY_TRANSCRIPT.map((utterance, index) => (
+                                <button key={`${utterance.time}-${index}`} type="button" className="transcript-row">
+                                    <span className="transcript-time">{utterance.time}</span>
+                                    <span className="transcript-text">{utterance.text}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="detailed-feedback-header">
                             <h3>영역별 상세 피드백</h3>

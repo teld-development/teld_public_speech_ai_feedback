@@ -87,6 +87,11 @@ const ATTEMPT_STATUS_META = {
     failed: { label: "처리 실패", tone: "danger" },
     cancelled: { label: "취소됨", tone: "muted" },
 };
+const REFLECTION_FIELD_LABELS = {
+    keep: "유지할 점",
+    improve: "바꿀 점",
+    next: "다음 실행",
+};
 
 const GROWTH_CHART = {
     width: 640,
@@ -142,6 +147,42 @@ function sourceLabel(sourceType) {
 
 function statusMeta(status) {
     return ATTEMPT_STATUS_META[status] || { label: status || "상태 없음", tone: "muted" };
+}
+
+function parseLegacyReflectionNote(note) {
+    const text = String(note || "").trim();
+    if (!text) return [];
+
+    const matches = [...text.matchAll(/\[(유지할 점|바꿀 점|다음 실행)\]\s*([\s\S]*?)(?=\n\n\[(?:유지할 점|바꿀 점|다음 실행)\]|\s*$)/g)];
+    if (matches.length > 0) {
+        return matches
+            .map((match) => ({
+                label: match[1],
+                text: String(match[2] || "").trim(),
+            }))
+            .filter((entry) => entry.text);
+    }
+
+    return [{ label: "성찰", text }];
+}
+
+function getReflectionEntries(attempt) {
+    const fields = attempt.reflectionFields && typeof attempt.reflectionFields === "object"
+        ? attempt.reflectionFields
+        : null;
+
+    if (fields) {
+        const entries = Object.entries(REFLECTION_FIELD_LABELS)
+            .map(([key, label]) => ({
+                key,
+                label,
+                text: String(fields[key] || "").trim(),
+            }));
+
+        return entries.some((entry) => entry.text) ? entries : [];
+    }
+
+    return parseLegacyReflectionNote(attempt.reflectionNote);
 }
 
 function isWaitingCleanupTarget(attempt) {
@@ -365,6 +406,17 @@ export default function PresentationDetailPage({ params }) {
         sessionStorage.setItem("analysisResult", JSON.stringify(attempt.analysisResult));
         sessionStorage.setItem("videoUrl", attempt.video?.videoUrl || "");
         sessionStorage.setItem("videoName", `${presentation.title || "발표"} ${attempt.attemptNo}회차`);
+        sessionStorage.setItem("prepareData", JSON.stringify({
+            duration: presentation.duration || "",
+            feedbackItems: attempt.analysisResult?.feedbackItems || [],
+        }));
+        sessionStorage.setItem("analysisContext", JSON.stringify({
+            presentationId,
+            attemptId: attempt.id,
+            attemptNo: attempt.attemptNo || null,
+            reflectionNote: attempt.reflectionNote || "",
+            reflectionFields: attempt.reflectionFields || null,
+        }));
         router.push("/analysis");
     };
 
@@ -984,42 +1036,67 @@ export default function PresentationDetailPage({ params }) {
                         </div>
                     ) : (
                         <div className="attempt-list">
-                            {attempts.map((attempt) => (
-                                <div
-                                    key={attempt.id}
-                                    className={`attempt-row attempt-row-${statusMeta(attempt.status).tone}`}
-                                >
-                                    <button
-                                        type="button"
-                                        className="attempt-row-main"
-                                        disabled={attempt.status !== "completed"}
-                                        onClick={() => openAttemptAnalysis(attempt)}
+                            {attempts.map((attempt) => {
+                                const reflectionEntries = getReflectionEntries(attempt);
+                                return (
+                                    <div
+                                        key={attempt.id}
+                                        className={`attempt-row attempt-row-${statusMeta(attempt.status).tone}`}
                                     >
-                                        <div>
-                                            <strong>{attempt.attemptNo}회차</strong>
-                                            <span>{sourceLabel(attempt.sourceType)}</span>
+                                        <div className="attempt-row-top">
+                                            <button
+                                                type="button"
+                                                className="attempt-row-main"
+                                                disabled={attempt.status !== "completed"}
+                                                onClick={() => openAttemptAnalysis(attempt)}
+                                            >
+                                                <div>
+                                                    <strong>{attempt.attemptNo}회차</strong>
+                                                    <span>{sourceLabel(attempt.sourceType)}</span>
+                                                </div>
+                                                <div className="attempt-status-block">
+                                                    <span className={`attempt-status-badge attempt-status-${statusMeta(attempt.status).tone}`}>
+                                                        {statusMeta(attempt.status).label}
+                                                    </span>
+                                                    <strong>
+                                                        {attempt.status === "completed"
+                                                            ? `${formatScore(attempt.scoreAverage)}/5`
+                                                            : attempt.errorMessage || ""}
+                                                    </strong>
+                                                    <span>{formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt)}</span>
+                                                </div>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="attempt-delete-btn"
+                                                onClick={() => handleDeleteAttempt(attempt)}
+                                            >
+                                                삭제
+                                            </button>
                                         </div>
-                                        <div className="attempt-status-block">
-                                            <span className={`attempt-status-badge attempt-status-${statusMeta(attempt.status).tone}`}>
-                                                {statusMeta(attempt.status).label}
-                                            </span>
-                                            <strong>
-                                                {attempt.status === "completed"
-                                                    ? `${formatScore(attempt.scoreAverage)}/5`
-                                                    : attempt.errorMessage || ""}
-                                            </strong>
-                                            <span>{formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt)}</span>
-                                        </div>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="attempt-delete-btn"
-                                        onClick={() => handleDeleteAttempt(attempt)}
-                                    >
-                                        삭제
-                                    </button>
-                                </div>
-                            ))}
+                                        {reflectionEntries.length > 0 && (
+                                            <button
+                                                type="button"
+                                                className="attempt-reflection-preview"
+                                                onClick={() => openAttemptAnalysis(attempt)}
+                                            >
+                                                <div className="attempt-reflection-head">
+                                                    <span>회차 성찰</span>
+                                                    <i>자세히 보기</i>
+                                                </div>
+                                                <div className="attempt-reflection-grid">
+                                                    {reflectionEntries.map((entry) => (
+                                                        <div key={entry.key || entry.label} className="attempt-reflection-item">
+                                                            <strong>{entry.label}</strong>
+                                                            <p className={entry.text ? "" : "empty"}>{entry.text || "미작성"}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </section>

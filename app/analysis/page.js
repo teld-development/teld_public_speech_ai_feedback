@@ -3,6 +3,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { db } from "../lib/firebase";
+import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
 
 function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
@@ -13,8 +16,157 @@ function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
     }, {});
 }
 
+const REFLECTION_STEPS = [
+    {
+        id: "keep",
+        label: "유지할 점",
+        title: "오늘 발표에서 계속 가져갈 점",
+        desc: "잘 작동했던 표현, 구성, 태도, 자료 활용을 적어두세요.",
+        placeholder: "예: 도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+    },
+    {
+        id: "improve",
+        label: "바꿀 점",
+        title: "다음 회차에서 조정할 점",
+        desc: "분석 결과를 보고 가장 먼저 고치고 싶은 한두 가지를 정리하세요.",
+        placeholder: "예: 결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
+    },
+    {
+        id: "next",
+        label: "다음 실행",
+        title: "다음 연습에서 실제로 할 행동",
+        desc: "다음 회차 전에 바로 실행할 수 있는 연습 계획을 적어두세요.",
+        placeholder: "예: 마지막 30초 결론부만 따로 3번 녹화해보기.",
+    },
+];
+
+const EMPTY_REFLECTION_FIELDS = REFLECTION_STEPS.reduce((acc, step) => {
+    acc[step.id] = "";
+    return acc;
+}, {});
+
+function buildReflectionNote(fields = EMPTY_REFLECTION_FIELDS) {
+    return REFLECTION_STEPS
+        .map((step) => {
+            const value = String(fields[step.id] || "").trim();
+            return value ? `[${step.label}]\n${value}` : "";
+        })
+        .filter(Boolean)
+        .join("\n\n");
+}
+
+function normalizeReflectionFields(context = {}) {
+    if (context.reflectionFields && typeof context.reflectionFields === "object") {
+        return {
+            ...EMPTY_REFLECTION_FIELDS,
+            ...context.reflectionFields,
+        };
+    }
+    return {
+        ...EMPTY_REFLECTION_FIELDS,
+        keep: context.reflectionNote || "",
+    };
+}
+
+function parseExpectedDurationSeconds(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const text = String(value || "").trim();
+    if (!text) return null;
+
+    if (text.includes(":")) {
+        const parts = text.split(":").map((part) => Number(part.trim()));
+        if (parts.length === 2 && parts.every(Number.isFinite)) {
+            return parts[0] * 60 + parts[1];
+        }
+        if (parts.length === 3 && parts.every(Number.isFinite)) {
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+    }
+
+    const unitPattern = /(\d+(?:\.\d+)?)\s*(시간|hours?|hrs?|h|분|minutes?|mins?|m|초|seconds?|secs?|s)/gi;
+    const matches = [...text.matchAll(unitPattern)];
+    if (matches.length > 0) {
+        return matches.reduce((total, match) => {
+            const amount = Number(match[1]);
+            const unit = match[2].toLowerCase();
+            if (!Number.isFinite(amount)) return total;
+            if (/^(시간|hours?|hrs?|h)$/.test(unit)) return total + amount * 3600;
+            if (/^(분|minutes?|mins?|m)$/.test(unit)) return total + amount * 60;
+            return total + amount;
+        }, 0);
+    }
+
+    const numeric = Number(text.replace(/[^\d.]/g, ""));
+    return Number.isFinite(numeric) && numeric > 0 ? numeric * 60 : null;
+}
+
+function formatDuration(seconds) {
+    if (!Number.isFinite(seconds)) return "-";
+    const rounded = Math.max(0, Math.round(seconds));
+    const hours = Math.floor(rounded / 3600);
+    const mins = Math.floor((rounded % 3600) / 60);
+    const secs = rounded % 60;
+    if (hours > 0) return `${hours}시간 ${mins}분 ${secs}초`;
+    if (mins > 0) return `${mins}분 ${secs}초`;
+    return `${secs}초`;
+}
+
+function parseTimeToSeconds(timeStr) {
+    if (!timeStr) return 0;
+    const parts = String(timeStr).split(":").map((part) => Number(part));
+    if (parts.length === 2 && parts.every(Number.isFinite)) return parts[0] * 60 + parts[1];
+    if (parts.length === 3 && parts.every(Number.isFinite)) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+}
+
+function buildTimingStatus(expectedSeconds, actualSeconds) {
+    if (!expectedSeconds) return null;
+    if (!Number.isFinite(actualSeconds)) {
+        return {
+            tone: "pending",
+            label: "영상 길이 확인 중",
+            differenceLabel: "-",
+            message: "영상 메타데이터를 불러오면 예상 시간과 비교합니다.",
+        };
+    }
+
+    const diff = Math.round(actualSeconds - expectedSeconds);
+    const absDiff = Math.abs(diff);
+    const tolerance = Math.max(10, Math.round(expectedSeconds * 0.05));
+
+    if (absDiff <= tolerance) {
+        return {
+            tone: "good",
+            label: "시간 적절",
+            differenceLabel: "거의 일치",
+            message: "입력한 예상 발표 시간과 실제 영상 시간이 거의 일치합니다.",
+        };
+    }
+
+    if (diff > 0) {
+        return {
+            tone: diff <= 60 ? "warn" : "danger",
+            label: diff <= 60 ? "조금 초과" : "시간 초과",
+            differenceLabel: `${formatDuration(diff)} 초과`,
+            message: diff <= 60
+                ? "예상 시간보다 약간 길었습니다. 핵심 문장 중심으로 마무리를 조금 압축해보세요."
+                : "예상 시간보다 많이 길었습니다. 도입, 예시, 결론 중 줄일 구간을 정해보세요.",
+        };
+    }
+
+    return {
+        tone: absDiff <= 60 ? "under" : "warn",
+        label: absDiff <= 60 ? "조금 짧음" : "시간 여유 큼",
+        differenceLabel: `${formatDuration(absDiff)} 짧음`,
+        message: absDiff <= 60
+            ? "예상 시간보다 조금 짧았습니다. 결론 정리나 핵심 근거를 한 문장 보강해도 좋습니다."
+            : "예상 시간보다 많이 짧았습니다. 주요 근거와 예시를 더 충분히 설명해보세요.",
+    };
+}
+
 export default function AnalysisPage() {
     const router = useRouter();
+    const { user } = useAuth();
     const videoRef = useRef(null);
     const chatEndRef = useRef(null);
 
@@ -31,6 +183,16 @@ export default function AnalysisPage() {
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [selectedItemIds, setSelectedItemIds] = useState([]);
     const [selectedByCategory, setSelectedByCategory] = useState(() => buildInitialSelections());
+    const [expectedDurationText, setExpectedDurationText] = useState("");
+    const [actualVideoSeconds, setActualVideoSeconds] = useState(null);
+    const [analysisContext, setAnalysisContext] = useState(null);
+    const [reflectionFields, setReflectionFields] = useState(EMPTY_REFLECTION_FIELDS);
+    const [savedReflectionFields, setSavedReflectionFields] = useState(EMPTY_REFLECTION_FIELDS);
+    const [reflectionOpen, setReflectionOpen] = useState(false);
+    const [activeReflectionStep, setActiveReflectionStep] = useState("keep");
+    const [savingReflection, setSavingReflection] = useState(false);
+    const [reflectionStatus, setReflectionStatus] = useState("");
+    const [summaryModal, setSummaryModal] = useState(null);
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -44,10 +206,21 @@ export default function AnalysisPage() {
                 setVideoUrl(savedVideoUrl);
                 setVideoName(savedVideoName || "업로드된 영상");
 
+                const savedAnalysisContext = sessionStorage.getItem("analysisContext");
+                if (savedAnalysisContext) {
+                    const context = JSON.parse(savedAnalysisContext);
+                    const fields = normalizeReflectionFields(context);
+                    setAnalysisContext(context);
+                    setReflectionFields(fields);
+                    setSavedReflectionFields(fields);
+                    setReflectionOpen(Boolean(buildReflectionNote(fields)));
+                }
+
                 const savedPrepareData = sessionStorage.getItem("prepareData");
                 if (savedPrepareData) {
                     const prepareData = JSON.parse(savedPrepareData);
                     setSelectedItemIds(prepareData.feedbackItems || []);
+                    setExpectedDurationText(prepareData.duration || "");
                 }
 
                 setTimeout(() => setIsLoading(false), 300);
@@ -89,6 +262,25 @@ export default function AnalysisPage() {
 
     const { timestamps = [], scores = {}, summary = {}, transcript = null } = analysisData || {};
     const transcriptUtterances = Array.isArray(transcript?.utterances) ? transcript.utterances : [];
+    const expectedDurationSeconds = useMemo(
+        () => parseExpectedDurationSeconds(expectedDurationText),
+        [expectedDurationText]
+    );
+    const fallbackActualSeconds = useMemo(() => {
+        const utteranceEnds = transcriptUtterances
+            .map((utterance) => utterance.endSec ?? utterance.startSec)
+            .filter((seconds) => typeof seconds === "number" && Number.isFinite(seconds));
+        const timestampSeconds = timestamps
+            .map((timestamp) => timestamp.seconds ?? parseTimeToSeconds(timestamp.time))
+            .filter((seconds) => typeof seconds === "number" && Number.isFinite(seconds));
+        const candidates = [...utteranceEnds, ...timestampSeconds];
+        return candidates.length ? Math.max(...candidates) : null;
+    }, [timestamps, transcriptUtterances]);
+    const displayActualSeconds = Number.isFinite(actualVideoSeconds) ? actualVideoSeconds : fallbackActualSeconds;
+    const timingStatus = useMemo(
+        () => buildTimingStatus(expectedDurationSeconds, displayActualSeconds),
+        [displayActualSeconds, expectedDurationSeconds]
+    );
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -133,13 +325,6 @@ export default function AnalysisPage() {
         const mins = Math.floor(safeSeconds / 60);
         const secs = Math.floor(safeSeconds % 60);
         return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-    };
-
-    const parseTimeToSeconds = (timeStr) => {
-        if (!timeStr) return 0;
-        const parts = timeStr.split(":");
-        if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-        return 0;
     };
 
     const handleChatSubmit = async (e) => {
@@ -242,6 +427,47 @@ export default function AnalysisPage() {
         return "선택한 타임스탬프 피드백을 기준으로 다음 연습에서 같은 장면을 다시 확인해보세요.";
     };
 
+    const handleSaveReflection = async () => {
+        if (!user || !analysisContext?.presentationId || !analysisContext?.attemptId || savingReflection) return;
+        setSavingReflection(true);
+        setReflectionStatus("");
+        try {
+            const note = buildReflectionNote(reflectionFields);
+            const attemptRef = doc(
+                db,
+                "users",
+                user.uid,
+                "presentations",
+                analysisContext.presentationId,
+                "attempts",
+                analysisContext.attemptId
+            );
+            await updateDoc(attemptRef, {
+                reflectionNote: note,
+                reflectionFields,
+                reflectionUpdatedAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            });
+            const nextContext = { ...analysisContext, reflectionNote: note, reflectionFields };
+            setAnalysisContext(nextContext);
+            setSavedReflectionFields(reflectionFields);
+            sessionStorage.setItem("analysisContext", JSON.stringify(nextContext));
+            setReflectionStatus("저장되었습니다.");
+        } catch (err) {
+            console.error("[Analysis] 성찰 노트 저장 실패:", err);
+            setReflectionStatus("저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
+        } finally {
+            setSavingReflection(false);
+        }
+    };
+
+    const canSaveReflection = Boolean(user && analysisContext?.presentationId && analysisContext?.attemptId);
+    const reflectionDirty = buildReflectionNote(reflectionFields) !== buildReflectionNote(savedReflectionFields);
+    const activeReflection = REFLECTION_STEPS.find((step) => step.id === activeReflectionStep) || REFLECTION_STEPS[0];
+    const sessionPath = analysisContext?.presentationId
+        ? `/presentations/${analysisContext.presentationId}`
+        : "/dashboard";
+
     return (
         <main className={`analysis-page-v2 feedback-demo-page ${isChatOpen ? "chat-open" : ""}`}>
             <header className="analysis-header-v2">
@@ -250,8 +476,8 @@ export default function AnalysisPage() {
                     <p>{videoName}</p>
                 </div>
                 <div className="header-actions">
-                    <button className="btn-outline" onClick={() => router.push("/dashboard")}>대시보드</button>
-                    <button className="btn-primary-sm" onClick={() => router.push("/dashboard")}>새 연습 시작</button>
+                    <button className="btn-outline" onClick={() => router.push(sessionPath)}>대시보드</button>
+                    <button className="btn-primary-sm" onClick={() => router.push(sessionPath)}>새 연습 시작</button>
                 </div>
             </header>
 
@@ -259,7 +485,13 @@ export default function AnalysisPage() {
                 <section className="video-summary-section">
                     <div className="video-container-v2">
                         {videoUrl ? (
-                            <video ref={videoRef} className="video-player-v2" src={videoUrl} controls>
+                            <video
+                                ref={videoRef}
+                                className="video-player-v2"
+                                src={videoUrl}
+                                controls
+                                onLoadedMetadata={(event) => setActualVideoSeconds(event.currentTarget.duration)}
+                            >
                                 브라우저가 비디오 재생을 지원하지 않습니다.
                             </video>
                         ) : (
@@ -273,24 +505,139 @@ export default function AnalysisPage() {
                     </div>
 
                     <div className="summary-container-v2">
+                        {expectedDurationText && timingStatus && (
+                            <div className={`duration-check-card duration-check-${timingStatus.tone}`}>
+                                <div className="duration-check-main">
+                                    <span className="duration-check-kicker">발표 시간</span>
+                                    <strong>{timingStatus.differenceLabel}</strong>
+                                    <span className="duration-check-status">{timingStatus.label}</span>
+                                </div>
+                                <div className="duration-check-meta">
+                                    <span>예상 {formatDuration(expectedDurationSeconds)}</span>
+                                    <span>실제 {formatDuration(displayActualSeconds)}</span>
+                                </div>
+                            </div>
+                        )}
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{summary.overall}</p>
 
                         <div className="summary-lists">
-                            <div className="summary-block strengths">
-                                <h4>강점</h4>
-                                <ul>
-                                    {(summary.strengths || []).map((item, idx) => (<li key={idx}>{item}</li>))}
-                                </ul>
-                            </div>
-                            <div className="summary-block suggestions">
-                                <h4>개선 제안</h4>
-                                <ul>
-                                    {(summary.suggestions || []).map((item, idx) => (<li key={idx}>{item}</li>))}
-                                </ul>
-                            </div>
+                            <button
+                                type="button"
+                                className="summary-card-trigger strengths"
+                                onClick={() => setSummaryModal({ title: "강점", tone: "strengths", items: summary.strengths || [] })}
+                            >
+                                <span>
+                                    <strong>강점 확인</strong>
+                                    <small>잘된 부분 모아보기</small>
+                                </span>
+                                <i aria-hidden="true">→</i>
+                            </button>
+                            <button
+                                type="button"
+                                className="summary-card-trigger suggestions"
+                                onClick={() => setSummaryModal({ title: "개선 제안", tone: "suggestions", items: summary.suggestions || [] })}
+                            >
+                                <span>
+                                    <strong>개선점 확인</strong>
+                                    <small>다음 연습 포인트 보기</small>
+                                </span>
+                                <i aria-hidden="true">→</i>
+                            </button>
                         </div>
                     </div>
+                </section>
+
+                {summaryModal && (
+                    <div className="summary-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setSummaryModal(null);
+                    }}>
+                        <section className={`summary-modal summary-modal-${summaryModal.tone}`} role="dialog" aria-modal="true" aria-labelledby="summary-modal-title">
+                            <header>
+                                <div>
+                                    <span>종합 피드백</span>
+                                    <h2 id="summary-modal-title">{summaryModal.title}</h2>
+                                </div>
+                                <button type="button" onClick={() => setSummaryModal(null)} aria-label="닫기">×</button>
+                            </header>
+                            <ul>
+                                {summaryModal.items.length > 0 ? (
+                                    summaryModal.items.map((item, index) => <li key={index}>{item}</li>)
+                                ) : (
+                                    <li>표시할 내용이 없습니다.</li>
+                                )}
+                            </ul>
+                        </section>
+                    </div>
+                )}
+
+                <section className={`reflection-note-section ${reflectionOpen ? "open" : ""}`}>
+                    <button
+                        type="button"
+                        className="reflection-note-header"
+                        onClick={() => setReflectionOpen((value) => !value)}
+                        aria-expanded={reflectionOpen}
+                    >
+                        <div>
+                            <span>성찰 노트</span>
+                            <h2>이번 회차를 다음 연습으로 연결하기</h2>
+                        </div>
+                        <strong>{reflectionOpen ? "접기" : buildReflectionNote(reflectionFields) ? "이어쓰기" : "작성하기"}</strong>
+                    </button>
+
+                    {reflectionOpen && (
+                        <div className="reflection-note-body">
+                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
+                                {REFLECTION_STEPS.map((step) => (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={activeReflectionStep === step.id}
+                                        className={activeReflectionStep === step.id ? "active" : ""}
+                                        onClick={() => setActiveReflectionStep(step.id)}
+                                    >
+                                        <span>{step.label}</span>
+                                        {reflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="reflection-step-panel">
+                                <div className="reflection-step-copy">
+                                    <h3>{activeReflection.title}</h3>
+                                    <p>{activeReflection.desc}</p>
+                                </div>
+                                <textarea
+                                    value={reflectionFields[activeReflection.id] || ""}
+                                    onChange={(event) => {
+                                        setReflectionFields((prev) => ({
+                                            ...prev,
+                                            [activeReflection.id]: event.target.value,
+                                        }));
+                                        setReflectionStatus("");
+                                    }}
+                                    placeholder={activeReflection.placeholder}
+                                    rows={5}
+                                />
+                            </div>
+
+                            <div className="reflection-note-actions">
+                                <span>
+                                    {canSaveReflection
+                                        ? reflectionStatus || (reflectionDirty ? "저장되지 않은 변경사항이 있습니다." : "회차 기록에 저장됩니다.")
+                                        : "발표 세션에서 열린 분석 결과만 저장할 수 있습니다."}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveReflection}
+                                    disabled={!canSaveReflection || savingReflection || !reflectionDirty}
+                                >
+                                    {savingReflection ? "저장 중..." : "성찰 저장"}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </section>
 
                 <div className="bottom-sections-wrapper">
