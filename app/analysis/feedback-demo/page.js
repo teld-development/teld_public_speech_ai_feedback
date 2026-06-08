@@ -330,11 +330,6 @@ export default function FeedbackDemoPage() {
                     </section>
                         ) : (
                     <section className="detailed-feedback-section feedback-demo-section">
-                        <div className="detailed-feedback-header">
-                            <h3>영역별 상세 피드백</h3>
-                        </div>
-                        <p className="timestamps-hint-v2">카드 헤더의 하위 영역을 선택하면 해당 피드백 내용이 표시됩니다</p>
-
                         <div className="feedback-demo-category-row">
                             {FEEDBACK_CATEGORIES.map((category) => {
                                 const selectedItemId = selectedByCategory[category.id];

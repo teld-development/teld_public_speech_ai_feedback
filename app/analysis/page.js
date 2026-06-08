@@ -638,10 +638,6 @@ export default function AnalysisPage() {
                     <div className="bottom-tabs-panel">
                         {bottomTab === "transcript" ? (
                         <section className="transcript-section-v2">
-                            <div className="timestamps-header">
-                                <h3>발화 기록</h3>
-                            </div>
-
                             {transcript?.error ? (
                                 <div className="transcript-error-message">
                                     <span>Chirp STT 처리 실패</span>
@@ -675,11 +671,6 @@ export default function AnalysisPage() {
                         </section>
                         ) : (
                     <section className="detailed-feedback-section feedback-demo-section">
-                        <div className="detailed-feedback-header">
-                            <h3>영역별 상세 피드백</h3>
-                        </div>
-                        <p className="timestamps-hint-v2">카드 헤더의 하위 영역을 선택하면 해당 피드백 내용이 표시됩니다</p>
-
                         <div className="feedback-demo-category-row">
                             {activeCategories.map((cat, categoryIndex) => {
                                 const selectedItemId = selectedByCategory[cat.id];
