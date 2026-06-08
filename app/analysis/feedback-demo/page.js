@@ -143,6 +143,7 @@ export default function FeedbackDemoPage() {
         next: "마지막 30초 결론부만 따로 3번 녹화해보기.",
     });
     const [summaryModal, setSummaryModal] = useState(null);
+    const [bottomTab, setBottomTab] = useState("transcript");
 
     const totalFeedbackCount = useMemo(
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
@@ -272,6 +273,31 @@ export default function FeedbackDemoPage() {
                 )}
 
                 <div className="bottom-sections-wrapper">
+                    <div className="bottom-tabs-header" role="tablist" aria-label="분석 자료 보기">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "transcript"}
+                            className={bottomTab === "transcript" ? "active" : ""}
+                            onClick={() => setBottomTab("transcript")}
+                        >
+                            <span>전사 자료 보기</span>
+                            <small>{DUMMY_TRANSCRIPT.length}개 발화</small>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "feedback"}
+                            className={bottomTab === "feedback" ? "active" : ""}
+                            onClick={() => setBottomTab("feedback")}
+                        >
+                            <span>피드백 보기</span>
+                            <small>{totalFeedbackCount}개 하위 영역</small>
+                        </button>
+                    </div>
+
+                    <div className="bottom-tabs-panel">
+                        {bottomTab === "transcript" ? (
                     <section className="transcript-section-v2">
                         <div className="timestamps-header">
                             <h3>발화 기록</h3>
@@ -286,7 +312,7 @@ export default function FeedbackDemoPage() {
                             ))}
                         </div>
                     </section>
-
+                        ) : (
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="detailed-feedback-header">
                             <h3>영역별 상세 피드백</h3>
@@ -365,6 +391,8 @@ export default function FeedbackDemoPage() {
                             })}
                         </div>
                     </section>
+                        )}
+                    </div>
                 </div>
             </div>
 

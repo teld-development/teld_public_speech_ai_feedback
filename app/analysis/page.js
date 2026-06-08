@@ -193,6 +193,7 @@ export default function AnalysisPage() {
     const [savingReflection, setSavingReflection] = useState(false);
     const [reflectionStatus, setReflectionStatus] = useState("");
     const [summaryModal, setSummaryModal] = useState(null);
+    const [bottomTab, setBottomTab] = useState("transcript");
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -603,7 +604,31 @@ export default function AnalysisPage() {
                 )}
 
                 <div className="bottom-sections-wrapper">
-                    {(transcriptUtterances.length > 0 || transcript?.error) && (
+                    <div className="bottom-tabs-header" role="tablist" aria-label="분석 자료 보기">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "transcript"}
+                            className={bottomTab === "transcript" ? "active" : ""}
+                            onClick={() => setBottomTab("transcript")}
+                        >
+                            <span>전사 자료 보기</span>
+                            <small>{transcript?.error ? "STT 미완료" : `${transcriptUtterances.length}개 발화`}</small>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "feedback"}
+                            className={bottomTab === "feedback" ? "active" : ""}
+                            onClick={() => setBottomTab("feedback")}
+                        >
+                            <span>피드백 보기</span>
+                            <small>{totalFeedbackAreaCount}개 하위 영역</small>
+                        </button>
+                    </div>
+
+                    <div className="bottom-tabs-panel">
+                        {bottomTab === "transcript" ? (
                         <section className="transcript-section-v2">
                             <div className="timestamps-header">
                                 <h3>발화 기록</h3>
@@ -617,7 +642,7 @@ export default function AnalysisPage() {
                                     <span>Chirp STT 처리 실패</span>
                                     <p>{transcript.error}</p>
                                 </div>
-                            ) : (
+                            ) : transcriptUtterances.length > 0 ? (
                                 <div className="transcript-scroll-container">
                                     {transcriptUtterances.map((utterance, index) => {
                                         const isSelected = selectedTimestamp?.kind === "transcript" && selectedTimestamp?.index === index;
@@ -634,10 +659,13 @@ export default function AnalysisPage() {
                                         );
                                     })}
                                 </div>
+                            ) : (
+                                <div className="no-feedback-message">
+                                    <span>표시할 전사 자료가 없습니다</span>
+                                </div>
                             )}
                         </section>
-                    )}
-
+                        ) : (
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="detailed-feedback-header">
                             <h3>영역별 상세 피드백</h3>
@@ -741,6 +769,8 @@ export default function AnalysisPage() {
                             })}
                         </div>
                     </section>
+                        )}
+                    </div>
 
                 </div>
             </div>

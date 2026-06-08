@@ -5356,7 +5356,60 @@ a {
 .bottom-sections-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+}
+
+.bottom-tabs-header {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #eef2f7;
+}
+
+.bottom-tabs-header button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.bottom-tabs-header button:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.bottom-tabs-header button.active {
+  background: #ffffff;
+  border-color: #94a3b8;
+  color: #0f172a;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.bottom-tabs-header span {
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.bottom-tabs-header small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bottom-tabs-panel {
+  min-width: 0;
 }
 
 .reflection-note-section {
@@ -6599,6 +6652,25 @@ a {
 
   .analysis-page-v2.chat-open .analysis-main-v2 {
     margin-right: 0;
+  }
+
+  .bottom-tabs-header {
+    gap: 6px;
+    padding: 5px;
+  }
+
+  .bottom-tabs-header button {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 54px;
+  }
+
+  .bottom-tabs-header span {
+    font-size: 13px;
+  }
+
+  .bottom-tabs-header small {
+    font-size: 11px;
   }
 }
 
