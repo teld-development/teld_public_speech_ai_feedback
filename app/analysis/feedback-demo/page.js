@@ -144,6 +144,7 @@ export default function FeedbackDemoPage() {
     });
     const [summaryModal, setSummaryModal] = useState(null);
     const [bottomTab, setBottomTab] = useState("transcript");
+    const [selectedDemoTranscriptIndex, setSelectedDemoTranscriptIndex] = useState(null);
 
     const totalFeedbackCount = useMemo(
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
@@ -303,13 +304,21 @@ export default function FeedbackDemoPage() {
                             <h3>발화 기록</h3>
                             <span className="timestamps-count">{DUMMY_TRANSCRIPT.length}개 발화</span>
                         </div>
-                        <div className="transcript-scroll-container">
+                        <div className="transcript-prose-container">
+                            <p className="transcript-prose">
                             {DUMMY_TRANSCRIPT.map((utterance, index) => (
-                                <button key={`${utterance.time}-${index}`} type="button" className="transcript-row">
-                                    <span className="transcript-time">{utterance.time}</span>
-                                    <span className="transcript-text">{utterance.text}</span>
+                                <button
+                                    key={`${utterance.time}-${index}`}
+                                    type="button"
+                                    className={`transcript-prose-segment ${selectedDemoTranscriptIndex === index ? "selected" : ""}`}
+                                    onClick={() => setSelectedDemoTranscriptIndex(index)}
+                                    title={utterance.time}
+                                    aria-label={`${utterance.time} 발화로 이동`}
+                                >
+                                    {utterance.text}
                                 </button>
                             ))}
+                            </p>
                         </div>
                     </section>
                         ) : (

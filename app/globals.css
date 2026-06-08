@@ -4855,6 +4855,64 @@ a {
   border-radius: 3px;
 }
 
+.transcript-prose-container {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 18px 20px;
+}
+
+.transcript-prose-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.transcript-prose-container::-webkit-scrollbar-track {
+  background: var(--accent-subtle);
+  border-radius: 3px;
+}
+
+.transcript-prose-container::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+.transcript-prose {
+  margin: 0;
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.9;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.transcript-prose-segment {
+  display: inline;
+  margin: 0 0.18em 0 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  padding: 1px 2px;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.transcript-prose-segment:hover {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.transcript-prose-segment.selected {
+  background: #dbeafe;
+  color: #1e40af;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+}
+
 .transcript-row {
   width: 100%;
   display: grid;

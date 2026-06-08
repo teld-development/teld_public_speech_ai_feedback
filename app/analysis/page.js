@@ -643,21 +643,24 @@ export default function AnalysisPage() {
                                     <p>{transcript.error}</p>
                                 </div>
                             ) : transcriptUtterances.length > 0 ? (
-                                <div className="transcript-scroll-container">
+                                <div className="transcript-prose-container">
+                                    <p className="transcript-prose">
                                     {transcriptUtterances.map((utterance, index) => {
                                         const isSelected = selectedTimestamp?.kind === "transcript" && selectedTimestamp?.index === index;
                                         return (
                                             <button
                                                 key={`${utterance.startSec || 0}-${index}`}
                                                 type="button"
-                                                className={`transcript-row ${isSelected ? "selected" : ""}`}
+                                                className={`transcript-prose-segment ${isSelected ? "selected" : ""}`}
                                                 onClick={() => handleTranscriptClick(utterance, index)}
+                                                title={formatUtteranceRange(utterance)}
+                                                aria-label={`${formatUtteranceRange(utterance)} 발화로 이동`}
                                             >
-                                                <span className="transcript-time">{formatUtteranceRange(utterance)}</span>
-                                                <span className="transcript-text">{utterance.text}</span>
+                                                {utterance.text}
                                             </button>
                                         );
                                     })}
+                                    </p>
                                 </div>
                             ) : (
                                 <div className="no-feedback-message">
