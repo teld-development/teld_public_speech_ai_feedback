@@ -7,6 +7,7 @@ import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
+import PresentationDataVisuals from "../components/PresentationDataVisuals";
 
 function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
     return FEEDBACK_CATEGORIES.reduce((acc, category) => {
@@ -100,68 +101,12 @@ function parseExpectedDurationSeconds(value) {
     return Number.isFinite(numeric) && numeric > 0 ? numeric * 60 : null;
 }
 
-function formatDuration(seconds) {
-    if (!Number.isFinite(seconds)) return "-";
-    const rounded = Math.max(0, Math.round(seconds));
-    const hours = Math.floor(rounded / 3600);
-    const mins = Math.floor((rounded % 3600) / 60);
-    const secs = rounded % 60;
-    if (hours > 0) return `${hours}시간 ${mins}분 ${secs}초`;
-    if (mins > 0) return `${mins}분 ${secs}초`;
-    return `${secs}초`;
-}
-
 function parseTimeToSeconds(timeStr) {
     if (!timeStr) return 0;
     const parts = String(timeStr).split(":").map((part) => Number(part));
     if (parts.length === 2 && parts.every(Number.isFinite)) return parts[0] * 60 + parts[1];
     if (parts.length === 3 && parts.every(Number.isFinite)) return parts[0] * 3600 + parts[1] * 60 + parts[2];
     return 0;
-}
-
-function buildTimingStatus(expectedSeconds, actualSeconds) {
-    if (!expectedSeconds) return null;
-    if (!Number.isFinite(actualSeconds)) {
-        return {
-            tone: "pending",
-            label: "영상 길이 확인 중",
-            differenceLabel: "-",
-            message: "영상 메타데이터를 불러오면 예상 시간과 비교합니다.",
-        };
-    }
-
-    const diff = Math.round(actualSeconds - expectedSeconds);
-    const absDiff = Math.abs(diff);
-    const tolerance = Math.max(10, Math.round(expectedSeconds * 0.05));
-
-    if (absDiff <= tolerance) {
-        return {
-            tone: "good",
-            label: "시간 적절",
-            differenceLabel: "거의 일치",
-            message: "입력한 예상 발표 시간과 실제 영상 시간이 거의 일치합니다.",
-        };
-    }
-
-    if (diff > 0) {
-        return {
-            tone: diff <= 60 ? "warn" : "danger",
-            label: diff <= 60 ? "조금 초과" : "시간 초과",
-            differenceLabel: `${formatDuration(diff)} 초과`,
-            message: diff <= 60
-                ? "예상 시간보다 약간 길었습니다. 핵심 문장 중심으로 마무리를 조금 압축해보세요."
-                : "예상 시간보다 많이 길었습니다. 도입, 예시, 결론 중 줄일 구간을 정해보세요.",
-        };
-    }
-
-    return {
-        tone: absDiff <= 60 ? "under" : "warn",
-        label: absDiff <= 60 ? "조금 짧음" : "시간 여유 큼",
-        differenceLabel: `${formatDuration(absDiff)} 짧음`,
-        message: absDiff <= 60
-            ? "예상 시간보다 조금 짧았습니다. 결론 정리나 핵심 근거를 한 문장 보강해도 좋습니다."
-            : "예상 시간보다 많이 짧았습니다. 주요 근거와 예시를 더 충분히 설명해보세요.",
-    };
 }
 
 export default function AnalysisPage() {
@@ -277,10 +222,6 @@ export default function AnalysisPage() {
         return candidates.length ? Math.max(...candidates) : null;
     }, [timestamps, transcriptUtterances]);
     const displayActualSeconds = Number.isFinite(actualVideoSeconds) ? actualVideoSeconds : fallbackActualSeconds;
-    const timingStatus = useMemo(
-        () => buildTimingStatus(expectedDurationSeconds, displayActualSeconds),
-        [displayActualSeconds, expectedDurationSeconds]
-    );
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -537,19 +478,6 @@ export default function AnalysisPage() {
                     </div>
 
                     <div className="summary-container-v2">
-                        {expectedDurationText && timingStatus && (
-                            <div className={`duration-check-card duration-check-${timingStatus.tone}`}>
-                                <div className="duration-check-main">
-                                    <span className="duration-check-kicker">발표 시간</span>
-                                    <strong>{timingStatus.differenceLabel}</strong>
-                                    <span className="duration-check-status">{timingStatus.label}</span>
-                                </div>
-                                <div className="duration-check-meta">
-                                    <span>예상 {formatDuration(expectedDurationSeconds)}</span>
-                                    <span>실제 {formatDuration(displayActualSeconds)}</span>
-                                </div>
-                            </div>
-                        )}
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{summary.overall}</p>
 
@@ -633,6 +561,19 @@ export default function AnalysisPage() {
                             </svg>
                             <span>영역별 피드백 보기</span>
                         </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "data"}
+                            className={bottomTab === "data" ? "active" : ""}
+                            onClick={() => setBottomTab("data")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 3v18h18" />
+                                <path d="M7 15l4-4 3 3 5-7" />
+                            </svg>
+                            <span>발표 데이터</span>
+                        </button>
                     </div>
 
                     <div className="bottom-tabs-panel">
@@ -669,7 +610,7 @@ export default function AnalysisPage() {
                                 </div>
                             )}
                         </section>
-                        ) : (
+                        ) : bottomTab === "feedback" ? (
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="feedback-demo-category-row">
                             {activeCategories.map((cat, categoryIndex) => {
@@ -767,6 +708,13 @@ export default function AnalysisPage() {
                             })}
                         </div>
                     </section>
+                        ) : (
+                            <PresentationDataVisuals
+                                utterances={transcriptUtterances}
+                                expectedSeconds={expectedDurationSeconds}
+                                actualSeconds={displayActualSeconds}
+                                onRatePointClick={(point) => handleTranscriptClick(point.utterance, point.index)}
+                            />
                         )}
                     </div>
 

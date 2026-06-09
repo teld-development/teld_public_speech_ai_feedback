@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
+import PresentationDataVisuals from "../../components/PresentationDataVisuals";
 
 const DUMMY_FEEDBACK = {
     topic_relevance: {
@@ -103,11 +104,9 @@ const DEMO_REFLECTION_STEPS = [
     },
 ];
 
-function formatDuration(seconds) {
-    const rounded = Math.max(0, Math.round(seconds));
-    const mins = Math.floor(rounded / 60);
-    const secs = rounded % 60;
-    return mins > 0 ? `${mins}분 ${secs}초` : `${secs}초`;
+function parseDemoTimeToSeconds(time) {
+    const [mins, secs] = String(time || "0:00").split(":").map((part) => Number(part));
+    return (Number.isFinite(mins) ? mins : 0) * 60 + (Number.isFinite(secs) ? secs : 0);
 }
 
 function buildDemoFeedback(item, category, index = 0) {
@@ -150,6 +149,19 @@ export default function FeedbackDemoPage() {
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
         []
     );
+    const demoTranscriptUtterances = useMemo(() => {
+        return DUMMY_TRANSCRIPT.map((utterance, index) => {
+            const startSec = parseDemoTimeToSeconds(utterance.time);
+            const nextStartSec = DUMMY_TRANSCRIPT[index + 1]
+                ? parseDemoTimeToSeconds(DUMMY_TRANSCRIPT[index + 1].time)
+                : startSec + 12;
+            return {
+                ...utterance,
+                startSec,
+                endSec: Math.max(startSec + 1, nextStartSec - 1),
+            };
+        });
+    }, []);
     const activeDemoReflection = DEMO_REFLECTION_STEPS.find((step) => step.id === activeDemoReflectionStep) || DEMO_REFLECTION_STEPS[0];
 
     return (
@@ -213,17 +225,6 @@ export default function FeedbackDemoPage() {
                     </div>
 
                     <div className="summary-container-v2">
-                        <div className="duration-check-card duration-check-warn">
-                            <div className="duration-check-main">
-                                <span className="duration-check-kicker">발표 시간</span>
-                                <strong>{formatDuration(DEMO_ACTUAL_SECONDS - DEMO_EXPECTED_SECONDS)} 초과</strong>
-                                <span className="duration-check-status">조금 초과</span>
-                            </div>
-                            <div className="duration-check-meta">
-                                <span>예상 {formatDuration(DEMO_EXPECTED_SECONDS)}</span>
-                                <span>실제 {formatDuration(DEMO_ACTUAL_SECONDS)}</span>
-                            </div>
-                        </div>
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{DUMMY_SUMMARY.overall}</p>
 
@@ -303,14 +304,24 @@ export default function FeedbackDemoPage() {
                             </svg>
                             <span>영역별 피드백 보기</span>
                         </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "data"}
+                            className={bottomTab === "data" ? "active" : ""}
+                            onClick={() => setBottomTab("data")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 3v18h18" />
+                                <path d="M7 15l4-4 3 3 5-7" />
+                            </svg>
+                            <span>발표 데이터</span>
+                        </button>
                     </div>
 
                     <div className="bottom-tabs-panel">
                         {bottomTab === "transcript" ? (
                     <section className="transcript-section-v2">
-                        <div className="timestamps-header">
-                            <h3>발화 기록</h3>
-                        </div>
                         <div className="transcript-prose-container">
                             <p className="transcript-prose">
                             {DUMMY_TRANSCRIPT.map((utterance, index) => (
@@ -328,7 +339,7 @@ export default function FeedbackDemoPage() {
                             </p>
                         </div>
                     </section>
-                        ) : (
+                        ) : bottomTab === "feedback" ? (
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="feedback-demo-category-row">
                             {FEEDBACK_CATEGORIES.map((category) => {
@@ -401,6 +412,13 @@ export default function FeedbackDemoPage() {
                             })}
                         </div>
                     </section>
+                        ) : (
+                            <PresentationDataVisuals
+                                utterances={demoTranscriptUtterances}
+                                expectedSeconds={DEMO_EXPECTED_SECONDS}
+                                actualSeconds={DEMO_ACTUAL_SECONDS}
+                                onRatePointClick={(point) => setSelectedDemoTranscriptIndex(point.index)}
+                            />
                         )}
                     </div>
                 </div>
