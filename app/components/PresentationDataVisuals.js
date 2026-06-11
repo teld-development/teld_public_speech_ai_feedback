@@ -177,9 +177,9 @@ function DurationComplianceChart({ expectedSeconds, actualSeconds }) {
     }
 
     const width = 520;
-    const height = 126;
+    const height = 88;
     const padX = 34;
-    const axisY = 56;
+    const axisY = 38;
     const min = Math.max(0, Math.min(expected - 300, actual - 60));
     const max = Math.max(expected + 300, actual + 60, min + 60);
     const xFor = (seconds) => padX + ((seconds - min) / (max - min)) * (width - padX * 2);
@@ -194,9 +194,17 @@ function DurationComplianceChart({ expectedSeconds, actualSeconds }) {
     return (
         <div className={`duration-compliance-card ${status.tone}`}>
             <div className="duration-compliance-topline">
-                <div>
-                    <span>예상 {formatDurationLabel(expected)}</span>
-                    <strong>실제 {formatDurationLabel(actual)}</strong>
+                <div className="duration-compliance-stat">
+                    <span>예상</span>
+                    <strong>{formatDurationLabel(expected)}</strong>
+                </div>
+                <div className="duration-compliance-stat">
+                    <span>실제 발표시간</span>
+                    <strong>{formatDurationLabel(actual)}</strong>
+                </div>
+                <div className="duration-compliance-stat">
+                    <span>초과시간</span>
+                    <strong>{status.diffText}</strong>
                 </div>
                 <em>{status.label}</em>
             </div>
@@ -213,19 +221,18 @@ function DurationComplianceChart({ expectedSeconds, actualSeconds }) {
                         className={`duration-zone duration-zone-${segment.tone}`}
                     />
                 ))}
-                <line x1={xFor(expected)} x2={xFor(expected)} y1={axisY - 24} y2={axisY + 24} className="duration-expected-line" />
-                <text x={xFor(expected)} y={axisY - 32} textAnchor="middle" className="chart-axis-label">예상</text>
+                <line x1={xFor(expected)} x2={xFor(expected)} y1={axisY - 18} y2={axisY + 18} className="duration-expected-line" />
+                <text x={xFor(expected)} y={axisY - 24} textAnchor="middle" className="chart-axis-label">예상</text>
                 <g className="duration-actual-marker" transform={`translate(${xFor(actual)} ${axisY})`}>
-                    <line x1="0" x2="0" y1="-28" y2="26" />
-                    <circle cx="0" cy="0" r="7" />
-                    <text y="42" textAnchor="middle">실제</text>
+                    <line x1="0" x2="0" y1="-21" y2="19" />
+                    <circle cx="0" cy="0" r="6" />
+                    <text y="32" textAnchor="middle">실제</text>
                 </g>
-                <text x={xFor(Math.max(min, expected - 240))} y={axisY + 40} textAnchor="middle" className="chart-axis-label">-4분</text>
-                <text x={xFor(Math.max(min, expected - 60))} y={axisY + 40} textAnchor="middle" className="chart-axis-label">-1분</text>
-                <text x={xFor(Math.min(max, expected + 60))} y={axisY + 40} textAnchor="middle" className="chart-axis-label">+1분</text>
-                <text x={xFor(Math.min(max, expected + 240))} y={axisY + 40} textAnchor="middle" className="chart-axis-label">+4분</text>
+                <text x={xFor(Math.max(min, expected - 240))} y={axisY + 31} textAnchor="middle" className="chart-axis-label">-4분</text>
+                <text x={xFor(Math.max(min, expected - 60))} y={axisY + 31} textAnchor="middle" className="chart-axis-label">-1분</text>
+                <text x={xFor(Math.min(max, expected + 60))} y={axisY + 31} textAnchor="middle" className="chart-axis-label">+1분</text>
+                <text x={xFor(Math.min(max, expected + 240))} y={axisY + 31} textAnchor="middle" className="chart-axis-label">+4분</text>
             </svg>
-            <p className="duration-compliance-summary">{status.diffText}</p>
         </div>
     );
 }
@@ -240,20 +247,19 @@ export default function PresentationDataVisuals({
 
     return (
         <section className="presentation-data-section">
-            <article className="presentation-data-card">
+            <article className="presentation-data-card presentation-data-card-compact">
                 <header>
-                    <h3>말 빠르기</h3>
-                    <p>전사 구간별 어절/분을 계산해 발표 속도 변화를 표시합니다.</p>
+                    <h3>발표 시간 판단</h3>
                 </header>
-                <SpeechRateChart series={series} onPointClick={onRatePointClick} />
+                <DurationComplianceChart expectedSeconds={expectedSeconds} actualSeconds={actualSeconds} />
             </article>
 
             <article className="presentation-data-card">
                 <header>
-                    <h3>발표 시간 준수</h3>
-                    <p>설정한 예상 시간을 기준으로 실제 발표 시간이 어느 구간에 있는지 표시합니다.</p>
+                    <h3>말속도</h3>
+                    <p>전사 구간별 어절/분을 계산해 발표 속도 변화를 표시합니다.</p>
                 </header>
-                <DurationComplianceChart expectedSeconds={expectedSeconds} actualSeconds={actualSeconds} />
+                <SpeechRateChart series={series} onPointClick={onRatePointClick} />
             </article>
         </section>
     );

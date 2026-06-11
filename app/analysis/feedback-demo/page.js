@@ -142,7 +142,7 @@ export default function FeedbackDemoPage() {
         next: "마지막 30초 결론부만 따로 3번 녹화해보기.",
     });
     const [summaryModal, setSummaryModal] = useState(null);
-    const [bottomTab, setBottomTab] = useState("transcript");
+    const [bottomTab, setBottomTab] = useState("data");
     const [selectedDemoTranscriptIndex, setSelectedDemoTranscriptIndex] = useState(null);
 
     const totalFeedbackCount = useMemo(
@@ -279,17 +279,15 @@ export default function FeedbackDemoPage() {
                         <button
                             type="button"
                             role="tab"
-                            aria-selected={bottomTab === "transcript"}
-                            className={bottomTab === "transcript" ? "active" : ""}
-                            onClick={() => setBottomTab("transcript")}
+                            aria-selected={bottomTab === "data"}
+                            className={bottomTab === "data" ? "active" : ""}
+                            onClick={() => setBottomTab("data")}
                         >
                             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
-                                <path d="M14 2v5h5" />
-                                <path d="M9 13h6" />
-                                <path d="M9 17h4" />
+                                <path d="M3 3v18h18" />
+                                <path d="M7 15l4-4 3 3 5-7" />
                             </svg>
-                            <span>전사 자료 보기</span>
+                            <span>발표 데이터</span>
                         </button>
                         <button
                             type="button"
@@ -304,42 +302,43 @@ export default function FeedbackDemoPage() {
                             </svg>
                             <span>영역별 피드백 보기</span>
                         </button>
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={bottomTab === "data"}
-                            className={bottomTab === "data" ? "active" : ""}
-                            onClick={() => setBottomTab("data")}
-                        >
-                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M3 3v18h18" />
-                                <path d="M7 15l4-4 3 3 5-7" />
-                            </svg>
-                            <span>발표 데이터</span>
-                        </button>
                     </div>
 
                     <div className="bottom-tabs-panel">
-                        {bottomTab === "transcript" ? (
-                    <section className="transcript-section-v2">
-                        <div className="transcript-prose-container">
-                            <p className="transcript-prose">
-                            {DUMMY_TRANSCRIPT.map((utterance, index) => (
-                                <button
-                                    key={`${utterance.time}-${index}`}
-                                    type="button"
-                                    className={`transcript-prose-segment ${selectedDemoTranscriptIndex === index ? "selected" : ""}`}
-                                    onClick={() => setSelectedDemoTranscriptIndex(index)}
-                                    title={utterance.time}
-                                    aria-label={`${utterance.time} 발화로 이동`}
-                                >
-                                    {utterance.text}
-                                </button>
-                            ))}
-                            </p>
-                        </div>
-                    </section>
-                        ) : bottomTab === "feedback" ? (
+                        {bottomTab === "data" ? (
+                            <section className="presentation-data-combined">
+                                <article className="transcript-data-card">
+                                    <header className="transcript-data-card-header">
+                                        <h3>발표 전사문</h3>
+                                    </header>
+                                    <div className="transcript-prose-container">
+                                        <p className="transcript-prose">
+                                            {DUMMY_TRANSCRIPT.map((utterance, index) => (
+                                                <button
+                                                    key={`${utterance.time}-${index}`}
+                                                    type="button"
+                                                    className={`transcript-prose-segment ${selectedDemoTranscriptIndex === index ? "selected" : ""}`}
+                                                    onClick={() => setSelectedDemoTranscriptIndex(index)}
+                                                    data-tooltip={utterance.time}
+                                                    title={utterance.time}
+                                                    aria-label={`${utterance.time} 발화로 이동`}
+                                                >
+                                                    {utterance.text}
+                                                </button>
+                                            ))}
+                                        </p>
+                                    </div>
+                                </article>
+                                <div className="presentation-data-visuals-column">
+                                    <PresentationDataVisuals
+                                        utterances={demoTranscriptUtterances}
+                                        expectedSeconds={DEMO_EXPECTED_SECONDS}
+                                        actualSeconds={DEMO_ACTUAL_SECONDS}
+                                        onRatePointClick={(point) => setSelectedDemoTranscriptIndex(point.index)}
+                                    />
+                                </div>
+                            </section>
+                        ) : (
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="feedback-demo-category-row">
                             {FEEDBACK_CATEGORIES.map((category) => {
@@ -412,13 +411,6 @@ export default function FeedbackDemoPage() {
                             })}
                         </div>
                     </section>
-                        ) : (
-                            <PresentationDataVisuals
-                                utterances={demoTranscriptUtterances}
-                                expectedSeconds={DEMO_EXPECTED_SECONDS}
-                                actualSeconds={DEMO_ACTUAL_SECONDS}
-                                onRatePointClick={(point) => setSelectedDemoTranscriptIndex(point.index)}
-                            />
                         )}
                     </div>
                 </div>

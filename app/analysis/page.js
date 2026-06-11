@@ -138,7 +138,7 @@ export default function AnalysisPage() {
     const [savingReflection, setSavingReflection] = useState(false);
     const [reflectionStatus, setReflectionStatus] = useState("");
     const [summaryModal, setSummaryModal] = useState(null);
-    const [bottomTab, setBottomTab] = useState("transcript");
+    const [bottomTab, setBottomTab] = useState("data");
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -536,17 +536,15 @@ export default function AnalysisPage() {
                         <button
                             type="button"
                             role="tab"
-                            aria-selected={bottomTab === "transcript"}
-                            className={bottomTab === "transcript" ? "active" : ""}
-                            onClick={() => setBottomTab("transcript")}
+                            aria-selected={bottomTab === "data"}
+                            className={bottomTab === "data" ? "active" : ""}
+                            onClick={() => setBottomTab("data")}
                         >
                             <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
-                                <path d="M14 2v5h5" />
-                                <path d="M9 13h6" />
-                                <path d="M9 17h4" />
+                                <path d="M3 3v18h18" />
+                                <path d="M7 15l4-4 3 3 5-7" />
                             </svg>
-                            <span>전사 자료 보기</span>
+                            <span>발표 데이터</span>
                         </button>
                         <button
                             type="button"
@@ -561,56 +559,57 @@ export default function AnalysisPage() {
                             </svg>
                             <span>영역별 피드백 보기</span>
                         </button>
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected={bottomTab === "data"}
-                            className={bottomTab === "data" ? "active" : ""}
-                            onClick={() => setBottomTab("data")}
-                        >
-                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M3 3v18h18" />
-                                <path d="M7 15l4-4 3 3 5-7" />
-                            </svg>
-                            <span>발표 데이터</span>
-                        </button>
                     </div>
 
                     <div className="bottom-tabs-panel">
-                        {bottomTab === "transcript" ? (
-                        <section className="transcript-section-v2">
-                            {transcript?.error ? (
-                                <div className="transcript-error-message">
-                                    <span>Chirp STT 처리 실패</span>
-                                    <p>{transcript.error}</p>
+                        {bottomTab === "data" ? (
+                            <section className="presentation-data-combined">
+                                <article className="transcript-data-card">
+                                    <header className="transcript-data-card-header">
+                                        <h3>발표 전사문</h3>
+                                    </header>
+                                    {transcript?.error ? (
+                                        <div className="transcript-error-message">
+                                            <span>Chirp STT 처리 실패</span>
+                                            <p>{transcript.error}</p>
+                                        </div>
+                                    ) : transcriptUtterances.length > 0 ? (
+                                        <div className="transcript-prose-container">
+                                            <p className="transcript-prose">
+                                                {transcriptUtterances.map((utterance, index) => {
+                                                    const isSelected = selectedTimestamp?.kind === "transcript" && selectedTimestamp?.index === index;
+                                                    return (
+                                                        <button
+                                                            key={`${utterance.startSec || 0}-${index}`}
+                                                            type="button"
+                                                            className={`transcript-prose-segment ${isSelected ? "selected" : ""}`}
+                                                            onClick={() => handleTranscriptClick(utterance, index)}
+                                                            data-tooltip={formatUtteranceRange(utterance)}
+                                                            title={formatUtteranceRange(utterance)}
+                                                            aria-label={`${formatUtteranceRange(utterance)} 발화로 이동`}
+                                                        >
+                                                            {utterance.text}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="no-feedback-message">
+                                            <span>표시할 전사 자료가 없습니다</span>
+                                        </div>
+                                    )}
+                                </article>
+                                <div className="presentation-data-visuals-column">
+                                    <PresentationDataVisuals
+                                        utterances={transcriptUtterances}
+                                        expectedSeconds={expectedDurationSeconds}
+                                        actualSeconds={displayActualSeconds}
+                                        onRatePointClick={(point) => handleTranscriptClick(point.utterance, point.index)}
+                                    />
                                 </div>
-                            ) : transcriptUtterances.length > 0 ? (
-                                <div className="transcript-prose-container">
-                                    <p className="transcript-prose">
-                                    {transcriptUtterances.map((utterance, index) => {
-                                        const isSelected = selectedTimestamp?.kind === "transcript" && selectedTimestamp?.index === index;
-                                        return (
-                                            <button
-                                                key={`${utterance.startSec || 0}-${index}`}
-                                                type="button"
-                                                className={`transcript-prose-segment ${isSelected ? "selected" : ""}`}
-                                                onClick={() => handleTranscriptClick(utterance, index)}
-                                                title={formatUtteranceRange(utterance)}
-                                                aria-label={`${formatUtteranceRange(utterance)} 발화로 이동`}
-                                            >
-                                                {utterance.text}
-                                            </button>
-                                        );
-                                    })}
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="no-feedback-message">
-                                    <span>표시할 전사 자료가 없습니다</span>
-                                </div>
-                            )}
-                        </section>
-                        ) : bottomTab === "feedback" ? (
+                            </section>
+                        ) : (
                     <section className="detailed-feedback-section feedback-demo-section">
                         <div className="feedback-demo-category-row">
                             {activeCategories.map((cat, categoryIndex) => {
@@ -708,13 +707,6 @@ export default function AnalysisPage() {
                             })}
                         </div>
                     </section>
-                        ) : (
-                            <PresentationDataVisuals
-                                utterances={transcriptUtterances}
-                                expectedSeconds={expectedDurationSeconds}
-                                actualSeconds={displayActualSeconds}
-                                onRatePointClick={(point) => handleTranscriptClick(point.utterance, point.index)}
-                            />
                         )}
                     </div>
 
