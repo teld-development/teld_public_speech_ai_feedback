@@ -94,9 +94,9 @@ const REFLECTION_FIELD_LABELS = {
 };
 
 const GROWTH_CHART = {
-    width: 640,
-    height: 240,
-    pad: { top: 24, right: 28, bottom: 42, left: 40 },
+    width: 360,
+    height: 220,
+    pad: { top: 24, right: 18, bottom: 38, left: 38 },
 };
 
 const CATEGORY_LINE_COLORS = {
@@ -104,6 +104,56 @@ const CATEGORY_LINE_COLORS = {
     organization: "#059669",
     expression: "#d97706",
 };
+
+function CategoryIcon({ categoryId }) {
+    const commonProps = {
+        width: 18,
+        height: 18,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        "aria-hidden": "true",
+    };
+
+    if (categoryId === "organization") {
+        return (
+            <span className="category-average-icon">
+                <svg {...commonProps}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="m15.5 8.5-2.2 5-4.8 2 2.2-5 4.8-2Z" />
+                    <circle cx="12" cy="12" r="1" />
+                </svg>
+            </span>
+        );
+    }
+
+    if (categoryId === "expression") {
+        return (
+            <span className="category-average-icon">
+                <svg {...commonProps}>
+                    <path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
+                    <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+                    <path d="M12 18v3" />
+                    <path d="M8 21h8" />
+                </svg>
+            </span>
+        );
+    }
+
+    return (
+        <span className="category-average-icon">
+            <svg {...commonProps}>
+                <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H7a3 3 0 0 0-3 3V5.5Z" />
+                <path d="M4 19a3 3 0 0 1 3-3h13" />
+                <path d="M8 7h8" />
+                <path d="M8 11h6" />
+            </svg>
+        </span>
+    );
+}
 
 function getDaysLeft(dday) {
     if (!dday) return null;
@@ -185,6 +235,17 @@ function getReflectionEntries(attempt) {
     return parseLegacyReflectionNote(attempt.reflectionNote);
 }
 
+function getReflectionDisplayEntries(attempt) {
+    const entries = getReflectionEntries(attempt);
+    if (entries.length > 0) return entries;
+
+    return Object.entries(REFLECTION_FIELD_LABELS).map(([key, label]) => ({
+        key,
+        label,
+        text: "",
+    }));
+}
+
 function isWaitingCleanupTarget(attempt) {
     if (!["pending", "waiting"].includes(attempt.status)) return false;
     if (attempt.analysisResult || attempt.video?.videoUrl) return false;
@@ -197,6 +258,11 @@ function scoreToChartY(score) {
     const { height, pad } = GROWTH_CHART;
     const chartHeight = height - pad.top - pad.bottom;
     return pad.top + chartHeight - ((score - 1) / 4) * chartHeight;
+}
+
+function shouldShowGrowthAttemptLabel(index, total) {
+    if (total <= 6) return true;
+    return index === 0 || index === total - 1 || index === Math.floor((total - 1) / 2);
 }
 
 function buildCategoryGrowthSeries(completedAttempts) {
@@ -227,6 +293,22 @@ function buildCategoryGrowthSeries(completedAttempts) {
             polyline: points.map((point) => `${point.x},${point.y}`).join(" "),
         };
     });
+}
+
+function calculateRecentCategoryAverages(scoredAttempts) {
+    const recentAttempts = scoredAttempts.slice(-3);
+
+    return FEEDBACK_CATEGORIES.reduce((acc, category) => {
+        const values = recentAttempts
+            .map((attempt) => attempt.categoryAverages?.[category.id])
+            .filter((score) => typeof score === "number" && Number.isFinite(score));
+
+        acc[category.id] = values.length
+            ? Number((values.reduce((sum, score) => sum + score, 0) / values.length).toFixed(2))
+            : null;
+
+        return acc;
+    }, {});
 }
 
 function ratioToStudents(ratios) {
@@ -287,6 +369,8 @@ export default function PresentationDetailPage({ params }) {
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [modalError, setModalError] = useState("");
+    const [showAllAttempts, setShowAllAttempts] = useState(false);
+    const [activeRecordTab, setActiveRecordTab] = useState("scores");
     const [crowdSize, setCrowdSize] = useState("medium");
     const [ratios, setRatios] = useState(AUDIENCE_PRESETS[1].ratios);
     const [selectedPreset, setSelectedPreset] = useState("standard");
@@ -359,6 +443,16 @@ export default function PresentationDetailPage({ params }) {
     const growthSeries = useMemo(
         () => buildCategoryGrowthSeries(scoredAttempts),
         [scoredAttempts]
+    );
+
+    const recentCategoryAverages = useMemo(
+        () => calculateRecentCategoryAverages(scoredAttempts),
+        [scoredAttempts]
+    );
+
+    const visibleAttempts = useMemo(
+        () => (showAllAttempts ? attempts : attempts.slice(0, 3)),
+        [attempts, showAllAttempts]
     );
 
     const totalRatio = useMemo(
@@ -933,98 +1027,6 @@ export default function PresentationDetailPage({ params }) {
 
                 <section className="session-panel">
                     <div className="session-panel-header">
-                        <h2>영역별 성장곡선</h2>
-                        <span>{scoredAttempts.length}개 점수 산출</span>
-                    </div>
-                    {scoredAttempts.length === 0 ? (
-                        <div className="attempt-empty">
-                            <p>점수가 산출된 회차가 생기면 영역별 평균 점수 변화가 여기에 표시됩니다.</p>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="growth-legend">
-                                {growthSeries.map((series) => (
-                                    <span key={series.category.id}>
-                                        <i style={{ backgroundColor: series.color }} />
-                                        {series.category.label}
-                                    </span>
-                                ))}
-                            </div>
-                            <div className="growth-chart-wrap">
-                                <svg
-                                    className="growth-chart"
-                                    viewBox={`0 0 ${GROWTH_CHART.width} ${GROWTH_CHART.height}`}
-                                    role="img"
-                                    aria-label="회차별 영역 평균 성장곡선"
-                                >
-                                    {[1, 2, 3, 4, 5].map((score) => {
-                                        const y = scoreToChartY(score);
-                                        return (
-                                            <g key={score}>
-                                                <line x1="40" y1={y} x2="612" y2={y} className="growth-grid-line" />
-                                                <text x="16" y={y + 4} className="growth-axis-label">{score}</text>
-                                            </g>
-                                        );
-                                    })}
-                                    {scoredAttempts.map((attempt, index) => {
-                                        const x = scoredAttempts.length === 1
-                                            ? GROWTH_CHART.pad.left + (GROWTH_CHART.width - GROWTH_CHART.pad.left - GROWTH_CHART.pad.right) / 2
-                                            : GROWTH_CHART.pad.left + ((GROWTH_CHART.width - GROWTH_CHART.pad.left - GROWTH_CHART.pad.right) * index) / (scoredAttempts.length - 1);
-                                        return (
-                                            <text key={attempt.id} x={x} y="224" textAnchor="middle" className="growth-axis-label">
-                                                {attempt.attemptNo}회
-                                            </text>
-                                        );
-                                    })}
-                                    {growthSeries.map((series) => (
-                                        <g key={series.category.id}>
-                                            {series.polyline && (
-                                                <polyline
-                                                    points={series.polyline}
-                                                    className="growth-line"
-                                                    style={{ stroke: series.color }}
-                                                />
-                                            )}
-                                            {series.points.map((point) => (
-                                                <circle
-                                                    key={`${series.category.id}-${point.attemptNo}`}
-                                                    cx={point.x}
-                                                    cy={point.y}
-                                                    r="5"
-                                                    className="growth-point"
-                                                    style={{ stroke: series.color }}
-                                                >
-                                                    <title>{`${series.category.label} ${point.attemptNo}회차 ${point.score.toFixed(1)}/5`}</title>
-                                                </circle>
-                                            ))}
-                                        </g>
-                                    ))}
-                                </svg>
-                            </div>
-                        </>
-                    )}
-                </section>
-
-                <section className="session-panel">
-                    <div className="session-panel-header">
-                        <h2>영역별 최근 평균</h2>
-                        <span>{completedAttempts.length}개 분석 완료</span>
-                    </div>
-                    <div className="category-average-grid">
-                        {FEEDBACK_CATEGORIES.map((category) => (
-                            <div key={category.id} className="category-average">
-                                <div>
-                                    <span className="category-average-icon">{category.icon}</span>
-                                    <strong>{category.label}</strong>
-                                </div>
-                                <span>{formatScore(presentation.categoryAverages?.[category.id])}/5</span>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-
-                <section className="session-panel">
-                    <div className="session-panel-header">
                         <h2>회차별 연습 기록</h2>
                         <span>{attempts.length}개 회차</span>
                     </div>
@@ -1035,10 +1037,9 @@ export default function PresentationDetailPage({ params }) {
                             <p>아직 연습 기록이 없습니다. 시뮬레이션이나 영상 업로드로 첫 회차를 시작하세요.</p>
                         </div>
                     ) : (
-                        <div className="attempt-list">
-                            {attempts.map((attempt) => {
-                                const reflectionEntries = getReflectionEntries(attempt);
-                                return (
+                        <>
+                            <div className="attempt-list">
+                                {visibleAttempts.map((attempt) => (
                                     <div
                                         key={attempt.id}
                                         className={`attempt-row attempt-row-${statusMeta(attempt.status).tone}`}
@@ -1074,17 +1075,169 @@ export default function PresentationDetailPage({ params }) {
                                                 삭제
                                             </button>
                                         </div>
-                                        {reflectionEntries.length > 0 && (
-                                            <button
-                                                type="button"
-                                                className="attempt-reflection-preview"
-                                                onClick={() => openAttemptAnalysis(attempt)}
-                                            >
-                                                <div className="attempt-reflection-head">
-                                                    <span>회차 성찰</span>
-                                                    <i>자세히 보기</i>
+                                    </div>
+                                ))}
+                            </div>
+                            {attempts.length > 3 && (
+                                <div className="attempt-list-actions">
+                                    <button
+                                        type="button"
+                                        className="attempt-toggle-btn"
+                                        onClick={() => setShowAllAttempts((value) => !value)}
+                                    >
+                                        {showAllAttempts ? "접기" : "펼침"}
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </section>
+
+                <section className="session-panel">
+                    <div className="session-record-tabs" role="tablist" aria-label="회차 기록 보기">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeRecordTab === "scores"}
+                            className={activeRecordTab === "scores" ? "active" : ""}
+                            onClick={() => setActiveRecordTab("scores")}
+                        >
+                            점수 기록
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeRecordTab === "reflections"}
+                            className={activeRecordTab === "reflections" ? "active" : ""}
+                            onClick={() => setActiveRecordTab("reflections")}
+                        >
+                            성찰기록
+                        </button>
+                    </div>
+
+                    {activeRecordTab === "scores" ? (
+                        <div className="record-tab-panel" role="tabpanel">
+                            <div className="session-panel-header">
+                                <h2>영역별 성장곡선</h2>
+                                <span>{scoredAttempts.length}개 점수 산출</span>
+                            </div>
+                            {scoredAttempts.length === 0 ? (
+                                <div className="attempt-empty">
+                                    <p>점수가 산출된 회차가 생기면 영역별 평균 점수 변화가 여기에 표시됩니다.</p>
+                                </div>
+                            ) : (
+                                <div className="growth-card-grid">
+                                    {growthSeries.map((series) => (
+                                        <article key={series.category.id} className="growth-card">
+                                            <header className="growth-card-header">
+                                                <div>
+                                                    <CategoryIcon categoryId={series.category.id} />
+                                                    <strong>{series.category.label}</strong>
                                                 </div>
-                                                <div className="attempt-reflection-grid">
+                                                <span>
+                                                    최근 3회 평균
+                                                    <b>{formatScore(recentCategoryAverages[series.category.id])}/5</b>
+                                                </span>
+                                            </header>
+                                            <div className="growth-chart-wrap growth-chart-wrap-compact">
+                                                <svg
+                                                    className="growth-chart growth-chart-compact"
+                                                    viewBox={`0 0 ${GROWTH_CHART.width} ${GROWTH_CHART.height}`}
+                                                    role="img"
+                                                    aria-label={`${series.category.label} 영역 회차별 평균 성장곡선`}
+                                                >
+                                                    {[1, 2, 3, 4, 5].map((score) => {
+                                                        const y = scoreToChartY(score);
+                                                        return (
+                                                            <g key={score}>
+                                                                <line
+                                                                    x1={GROWTH_CHART.pad.left}
+                                                                    y1={y}
+                                                                    x2={GROWTH_CHART.width - GROWTH_CHART.pad.right}
+                                                                    y2={y}
+                                                                    className="growth-grid-line"
+                                                                />
+                                                                <text x={GROWTH_CHART.pad.left - 18} y={y + 4} className="growth-axis-label">{score}</text>
+                                                            </g>
+                                                        );
+                                                    })}
+                                                    {scoredAttempts.map((attempt, index) => {
+                                                        const x = scoredAttempts.length === 1
+                                                            ? GROWTH_CHART.pad.left + (GROWTH_CHART.width - GROWTH_CHART.pad.left - GROWTH_CHART.pad.right) / 2
+                                                            : GROWTH_CHART.pad.left + ((GROWTH_CHART.width - GROWTH_CHART.pad.left - GROWTH_CHART.pad.right) * index) / (scoredAttempts.length - 1);
+                                                        return shouldShowGrowthAttemptLabel(index, scoredAttempts.length) ? (
+                                                            <text key={attempt.id} x={x} y={GROWTH_CHART.height - 12} textAnchor="middle" className="growth-axis-label">
+                                                                {attempt.attemptNo}회
+                                                            </text>
+                                                        ) : null;
+                                                    })}
+                                                    {series.polyline && (
+                                                        <polyline
+                                                            points={series.polyline}
+                                                            className="growth-line"
+                                                            style={{ stroke: series.color }}
+                                                        />
+                                                    )}
+                                                    {series.points.map((point) => (
+                                                        <circle
+                                                            key={`${series.category.id}-${point.attemptNo}`}
+                                                            cx={point.x}
+                                                            cy={point.y}
+                                                            r="5"
+                                                            className="growth-point"
+                                                            style={{ stroke: series.color }}
+                                                        >
+                                                            <title>{`${series.category.label} ${point.attemptNo}회차 ${point.score.toFixed(1)}/5`}</title>
+                                                        </circle>
+                                                    ))}
+                                                </svg>
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="record-tab-panel" role="tabpanel">
+                            <div className="session-panel-header">
+                                <h2>성찰기록</h2>
+                                <span>{attempts.length}개 회차</span>
+                            </div>
+                            {attempts.length === 0 ? (
+                                <div className="attempt-empty">
+                                    <p>아직 성찰을 남길 회차가 없습니다.</p>
+                                </div>
+                            ) : (
+                                <div className="reflection-record-list">
+                                    {attempts.map((attempt) => {
+                                        const reflectionEntries = getReflectionDisplayEntries(attempt);
+                                        const canOpenAnalysis = attempt.status === "completed" && attempt.analysisResult;
+                                        return (
+                                            <article
+                                                key={attempt.id}
+                                                className={`reflection-record-card reflection-record-card-${statusMeta(attempt.status).tone}`}
+                                            >
+                                                <div className="reflection-record-head">
+                                                    <div>
+                                                        <strong>{attempt.attemptNo}회차</strong>
+                                                        <span>{sourceLabel(attempt.sourceType)} · {formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt) || "날짜 없음"}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className={`attempt-status-badge attempt-status-${statusMeta(attempt.status).tone}`}>
+                                                            {statusMeta(attempt.status).label}
+                                                        </span>
+                                                        {canOpenAnalysis && (
+                                                            <button
+                                                                type="button"
+                                                                className="reflection-detail-btn"
+                                                                onClick={() => openAttemptAnalysis(attempt)}
+                                                            >
+                                                                분석 보기
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="attempt-reflection-grid reflection-record-grid">
                                                     {reflectionEntries.map((entry) => (
                                                         <div key={entry.key || entry.label} className="attempt-reflection-item">
                                                             <strong>{entry.label}</strong>
@@ -1092,11 +1245,11 @@ export default function PresentationDetailPage({ params }) {
                                                         </div>
                                                     ))}
                                                 </div>
-                                            </button>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                            </article>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
                 </section>
