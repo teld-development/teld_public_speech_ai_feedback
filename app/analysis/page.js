@@ -7,6 +7,7 @@ import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
+import PresentationDataVisuals from "../components/PresentationDataVisuals";
 
 function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
     return FEEDBACK_CATEGORIES.reduce((acc, category) => {
@@ -19,21 +20,21 @@ function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
 const REFLECTION_STEPS = [
     {
         id: "keep",
-        label: "유지할 점",
+        label: "잘한점",
         title: "오늘 발표에서 계속 가져갈 점",
         desc: "잘 작동했던 표현, 구성, 태도, 자료 활용을 적어두세요.",
-        placeholder: "예: 도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+        placeholder: "예: 도입에서 발표 목적을 먼저 말해서 흐름이 분명했다.",
     },
     {
         id: "improve",
-        label: "바꿀 점",
+        label: "개선점",
         title: "다음 회차에서 조정할 점",
         desc: "분석 결과를 보고 가장 먼저 고치고 싶은 한두 가지를 정리하세요.",
         placeholder: "예: 결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
     },
     {
         id: "next",
-        label: "다음 실행",
+        label: "다음 계획",
         title: "다음 연습에서 실제로 할 행동",
         desc: "다음 회차 전에 바로 실행할 수 있는 연습 계획을 적어두세요.",
         placeholder: "예: 마지막 30초 결론부만 따로 3번 녹화해보기.",
@@ -100,68 +101,12 @@ function parseExpectedDurationSeconds(value) {
     return Number.isFinite(numeric) && numeric > 0 ? numeric * 60 : null;
 }
 
-function formatDuration(seconds) {
-    if (!Number.isFinite(seconds)) return "-";
-    const rounded = Math.max(0, Math.round(seconds));
-    const hours = Math.floor(rounded / 3600);
-    const mins = Math.floor((rounded % 3600) / 60);
-    const secs = rounded % 60;
-    if (hours > 0) return `${hours}시간 ${mins}분 ${secs}초`;
-    if (mins > 0) return `${mins}분 ${secs}초`;
-    return `${secs}초`;
-}
-
 function parseTimeToSeconds(timeStr) {
     if (!timeStr) return 0;
     const parts = String(timeStr).split(":").map((part) => Number(part));
     if (parts.length === 2 && parts.every(Number.isFinite)) return parts[0] * 60 + parts[1];
     if (parts.length === 3 && parts.every(Number.isFinite)) return parts[0] * 3600 + parts[1] * 60 + parts[2];
     return 0;
-}
-
-function buildTimingStatus(expectedSeconds, actualSeconds) {
-    if (!expectedSeconds) return null;
-    if (!Number.isFinite(actualSeconds)) {
-        return {
-            tone: "pending",
-            label: "영상 길이 확인 중",
-            differenceLabel: "-",
-            message: "영상 메타데이터를 불러오면 예상 시간과 비교합니다.",
-        };
-    }
-
-    const diff = Math.round(actualSeconds - expectedSeconds);
-    const absDiff = Math.abs(diff);
-    const tolerance = Math.max(10, Math.round(expectedSeconds * 0.05));
-
-    if (absDiff <= tolerance) {
-        return {
-            tone: "good",
-            label: "시간 적절",
-            differenceLabel: "거의 일치",
-            message: "입력한 예상 발표 시간과 실제 영상 시간이 거의 일치합니다.",
-        };
-    }
-
-    if (diff > 0) {
-        return {
-            tone: diff <= 60 ? "warn" : "danger",
-            label: diff <= 60 ? "조금 초과" : "시간 초과",
-            differenceLabel: `${formatDuration(diff)} 초과`,
-            message: diff <= 60
-                ? "예상 시간보다 약간 길었습니다. 핵심 문장 중심으로 마무리를 조금 압축해보세요."
-                : "예상 시간보다 많이 길었습니다. 도입, 예시, 결론 중 줄일 구간을 정해보세요.",
-        };
-    }
-
-    return {
-        tone: absDiff <= 60 ? "under" : "warn",
-        label: absDiff <= 60 ? "조금 짧음" : "시간 여유 큼",
-        differenceLabel: `${formatDuration(absDiff)} 짧음`,
-        message: absDiff <= 60
-            ? "예상 시간보다 조금 짧았습니다. 결론 정리나 핵심 근거를 한 문장 보강해도 좋습니다."
-            : "예상 시간보다 많이 짧았습니다. 주요 근거와 예시를 더 충분히 설명해보세요.",
-    };
 }
 
 export default function AnalysisPage() {
@@ -193,6 +138,7 @@ export default function AnalysisPage() {
     const [savingReflection, setSavingReflection] = useState(false);
     const [reflectionStatus, setReflectionStatus] = useState("");
     const [summaryModal, setSummaryModal] = useState(null);
+    const [bottomTab, setBottomTab] = useState("transcript");
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -213,7 +159,6 @@ export default function AnalysisPage() {
                     setAnalysisContext(context);
                     setReflectionFields(fields);
                     setSavedReflectionFields(fields);
-                    setReflectionOpen(Boolean(buildReflectionNote(fields)));
                 }
 
                 const savedPrepareData = sessionStorage.getItem("prepareData");
@@ -277,10 +222,6 @@ export default function AnalysisPage() {
         return candidates.length ? Math.max(...candidates) : null;
     }, [timestamps, transcriptUtterances]);
     const displayActualSeconds = Number.isFinite(actualVideoSeconds) ? actualVideoSeconds : fallbackActualSeconds;
-    const timingStatus = useMemo(
-        () => buildTimingStatus(expectedDurationSeconds, displayActualSeconds),
-        [displayActualSeconds, expectedDurationSeconds]
-    );
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -475,6 +416,38 @@ export default function AnalysisPage() {
                     <h1>발표 분석 결과</h1>
                     <p>{videoName}</p>
                 </div>
+                <div className="header-reflection-actions" aria-label="성찰 도구">
+                    <button
+                        type="button"
+                        className="analysis-tool-btn note"
+                        onClick={() => setReflectionOpen(true)}
+                    >
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <path d="M14 2v6h6" />
+                            <path d="M16 13H8" />
+                            <path d="M16 17H8" />
+                            <path d="M10 9H8" />
+                        </svg>
+                        <span>{buildReflectionNote(reflectionFields) ? "성찰 노트" : "노트 작성"}</span>
+                    </button>
+                    <button
+                        type="button"
+                        className={`analysis-tool-btn ai ${isChatOpen ? "active" : ""}`}
+                        onClick={() => setIsChatOpen((value) => !value)}
+                    >
+                        {isChatOpen ? (
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                        ) : (
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            </svg>
+                        )}
+                        <span>{isChatOpen ? "AI 닫기" : "AI 성찰"}</span>
+                    </button>
+                </div>
                 <div className="header-actions">
                     <button className="btn-outline" onClick={() => router.push(sessionPath)}>대시보드</button>
                     <button className="btn-primary-sm" onClick={() => router.push(sessionPath)}>새 연습 시작</button>
@@ -505,19 +478,6 @@ export default function AnalysisPage() {
                     </div>
 
                     <div className="summary-container-v2">
-                        {expectedDurationText && timingStatus && (
-                            <div className={`duration-check-card duration-check-${timingStatus.tone}`}>
-                                <div className="duration-check-main">
-                                    <span className="duration-check-kicker">발표 시간</span>
-                                    <strong>{timingStatus.differenceLabel}</strong>
-                                    <span className="duration-check-status">{timingStatus.label}</span>
-                                </div>
-                                <div className="duration-check-meta">
-                                    <span>예상 {formatDuration(expectedDurationSeconds)}</span>
-                                    <span>실제 {formatDuration(displayActualSeconds)}</span>
-                                </div>
-                            </div>
-                        )}
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{summary.overall}</p>
 
@@ -571,118 +531,87 @@ export default function AnalysisPage() {
                     </div>
                 )}
 
-                <section className={`reflection-note-section ${reflectionOpen ? "open" : ""}`}>
-                    <button
-                        type="button"
-                        className="reflection-note-header"
-                        onClick={() => setReflectionOpen((value) => !value)}
-                        aria-expanded={reflectionOpen}
-                    >
-                        <div>
-                            <span>성찰 노트</span>
-                            <h2>이번 회차를 다음 연습으로 연결하기</h2>
-                        </div>
-                        <strong>{reflectionOpen ? "접기" : buildReflectionNote(reflectionFields) ? "이어쓰기" : "작성하기"}</strong>
-                    </button>
-
-                    {reflectionOpen && (
-                        <div className="reflection-note-body">
-                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
-                                {REFLECTION_STEPS.map((step) => (
-                                    <button
-                                        key={step.id}
-                                        type="button"
-                                        role="tab"
-                                        aria-selected={activeReflectionStep === step.id}
-                                        className={activeReflectionStep === step.id ? "active" : ""}
-                                        onClick={() => setActiveReflectionStep(step.id)}
-                                    >
-                                        <span>{step.label}</span>
-                                        {reflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="reflection-step-panel">
-                                <div className="reflection-step-copy">
-                                    <h3>{activeReflection.title}</h3>
-                                    <p>{activeReflection.desc}</p>
-                                </div>
-                                <textarea
-                                    value={reflectionFields[activeReflection.id] || ""}
-                                    onChange={(event) => {
-                                        setReflectionFields((prev) => ({
-                                            ...prev,
-                                            [activeReflection.id]: event.target.value,
-                                        }));
-                                        setReflectionStatus("");
-                                    }}
-                                    placeholder={activeReflection.placeholder}
-                                    rows={5}
-                                />
-                            </div>
-
-                            <div className="reflection-note-actions">
-                                <span>
-                                    {canSaveReflection
-                                        ? reflectionStatus || (reflectionDirty ? "저장되지 않은 변경사항이 있습니다." : "회차 기록에 저장됩니다.")
-                                        : "발표 세션에서 열린 분석 결과만 저장할 수 있습니다."}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={handleSaveReflection}
-                                    disabled={!canSaveReflection || savingReflection || !reflectionDirty}
-                                >
-                                    {savingReflection ? "저장 중..." : "성찰 저장"}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </section>
-
                 <div className="bottom-sections-wrapper">
-                    {(transcriptUtterances.length > 0 || transcript?.error) && (
-                        <section className="transcript-section-v2">
-                            <div className="timestamps-header">
-                                <h3>발화 기록</h3>
-                                <span className="timestamps-count">
-                                    {transcriptUtterances.length > 0 ? `${transcriptUtterances.length}개 발화` : "STT 미완료"}
-                                </span>
-                            </div>
+                    <div className="bottom-tabs-header" role="tablist" aria-label="분석 자료 보기">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "transcript"}
+                            className={bottomTab === "transcript" ? "active" : ""}
+                            onClick={() => setBottomTab("transcript")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                                <path d="M14 2v5h5" />
+                                <path d="M9 13h6" />
+                                <path d="M9 17h4" />
+                            </svg>
+                            <span>전사 자료 보기</span>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "feedback"}
+                            className={bottomTab === "feedback" ? "active" : ""}
+                            onClick={() => setBottomTab("feedback")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 11l3 3L22 4" />
+                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                            </svg>
+                            <span>영역별 피드백 보기</span>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "data"}
+                            className={bottomTab === "data" ? "active" : ""}
+                            onClick={() => setBottomTab("data")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 3v18h18" />
+                                <path d="M7 15l4-4 3 3 5-7" />
+                            </svg>
+                            <span>발표 데이터</span>
+                        </button>
+                    </div>
 
+                    <div className="bottom-tabs-panel">
+                        {bottomTab === "transcript" ? (
+                        <section className="transcript-section-v2">
                             {transcript?.error ? (
                                 <div className="transcript-error-message">
                                     <span>Chirp STT 처리 실패</span>
                                     <p>{transcript.error}</p>
                                 </div>
-                            ) : (
-                                <div className="transcript-scroll-container">
+                            ) : transcriptUtterances.length > 0 ? (
+                                <div className="transcript-prose-container">
+                                    <p className="transcript-prose">
                                     {transcriptUtterances.map((utterance, index) => {
                                         const isSelected = selectedTimestamp?.kind === "transcript" && selectedTimestamp?.index === index;
                                         return (
                                             <button
                                                 key={`${utterance.startSec || 0}-${index}`}
                                                 type="button"
-                                                className={`transcript-row ${isSelected ? "selected" : ""}`}
+                                                className={`transcript-prose-segment ${isSelected ? "selected" : ""}`}
                                                 onClick={() => handleTranscriptClick(utterance, index)}
+                                                title={formatUtteranceRange(utterance)}
+                                                aria-label={`${formatUtteranceRange(utterance)} 발화로 이동`}
                                             >
-                                                <span className="transcript-time">{formatUtteranceRange(utterance)}</span>
-                                                <span className="transcript-text">{utterance.text}</span>
+                                                {utterance.text}
                                             </button>
                                         );
                                     })}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="no-feedback-message">
+                                    <span>표시할 전사 자료가 없습니다</span>
                                 </div>
                             )}
                         </section>
-                    )}
-
+                        ) : bottomTab === "feedback" ? (
                     <section className="detailed-feedback-section feedback-demo-section">
-                        <div className="detailed-feedback-header">
-                            <h3>영역별 상세 피드백</h3>
-                            <span className="timestamps-count">{totalFeedbackAreaCount}개 하위 영역</span>
-                        </div>
-                        <p className="timestamps-hint-v2">카드 헤더의 하위 영역을 선택하면 해당 피드백 내용이 표시됩니다</p>
-
                         <div className="feedback-demo-category-row">
                             {activeCategories.map((cat, categoryIndex) => {
                                 const selectedItemId = selectedByCategory[cat.id];
@@ -779,34 +708,88 @@ export default function AnalysisPage() {
                             })}
                         </div>
                     </section>
+                        ) : (
+                            <PresentationDataVisuals
+                                utterances={transcriptUtterances}
+                                expectedSeconds={expectedDurationSeconds}
+                                actualSeconds={displayActualSeconds}
+                                onRatePointClick={(point) => handleTranscriptClick(point.utterance, point.index)}
+                            />
+                        )}
+                    </div>
 
                 </div>
             </div>
 
-            <button
-                className={`chat-toggle-btn ${isChatOpen ? "open" : ""}`}
-                onClick={() => setIsChatOpen(!isChatOpen)}
-                title="AI 성찰 대화"
-            >
-                {isChatOpen ? (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                ) : (
-                    <>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                        <span className="chat-toggle-label">AI 성찰</span>
-                    </>
-                )}
-            </button>
+            {reflectionOpen && (
+                <div className="reflection-note-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) setReflectionOpen(false);
+                }}>
+                    <section className="reflection-note-modal" role="dialog" aria-modal="true" aria-labelledby="reflection-note-modal-title">
+                        <header className="reflection-note-modal-header">
+                            <div>
+                                <h2 id="reflection-note-modal-title">성찰 노트</h2>
+                            </div>
+                            <button type="button" onClick={() => setReflectionOpen(false)} aria-label="닫기">×</button>
+                        </header>
+
+                        <div className="reflection-note-body reflection-note-modal-body">
+                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
+                                {REFLECTION_STEPS.map((step) => (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={activeReflectionStep === step.id}
+                                        className={activeReflectionStep === step.id ? "active" : ""}
+                                        onClick={() => setActiveReflectionStep(step.id)}
+                                    >
+                                        <span>{step.label}</span>
+                                        {reflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="reflection-step-panel">
+                                <textarea
+                                    value={reflectionFields[activeReflection.id] || ""}
+                                    onChange={(event) => {
+                                        setReflectionFields((prev) => ({
+                                            ...prev,
+                                            [activeReflection.id]: event.target.value,
+                                        }));
+                                        setReflectionStatus("");
+                                    }}
+                                    placeholder={activeReflection.placeholder}
+                                    rows={5}
+                                />
+                            </div>
+
+                            <div className="reflection-note-actions">
+                                <span>
+                                    {canSaveReflection
+                                        ? reflectionStatus || (reflectionDirty ? "저장되지 않은 변경사항이 있습니다." : "회차 기록에 저장됩니다.")
+                                        : "발표 세션에서 열린 분석 결과만 저장할 수 있습니다."}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveReflection}
+                                    disabled={!canSaveReflection || savingReflection || !reflectionDirty}
+                                >
+                                    {savingReflection ? "저장 중..." : "성찰 저장"}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            )}
 
             <div className={`reflection-chat-panel ${isChatOpen ? "open" : ""}`}>
                 <div className="chat-panel-header">
                     <div className="chat-panel-title">
                         <span className="chat-icon">🤔</span>
                         <h3>AI 발표 성찰 대화</h3>
+                        <button type="button" className="chat-panel-close" onClick={() => setIsChatOpen(false)} aria-label="AI 성찰 닫기">×</button>
                     </div>
                     <p className="chat-panel-desc">AI와 함께 발표를 되돌아보며 성찰해보세요</p>
                 </div>

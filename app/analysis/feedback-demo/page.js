@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FEEDBACK_CATEGORIES } from "../../lib/feedbackAreas";
+import PresentationDataVisuals from "../../components/PresentationDataVisuals";
 
 const DUMMY_FEEDBACK = {
     topic_relevance: {
@@ -82,32 +83,30 @@ const DUMMY_TRANSCRIPT = [
 const DEMO_REFLECTION_STEPS = [
     {
         id: "keep",
-        label: "유지할 점",
+        label: "잘한점",
         title: "오늘 발표에서 계속 가져갈 점",
         desc: "잘 작동했던 표현, 구성, 태도, 자료 활용을 적어두세요.",
-        placeholder: "예: 도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
+        placeholder: "예: 도입에서 발표 목적을 먼저 말해서 흐름이 분명했다.",
     },
     {
         id: "improve",
-        label: "바꿀 점",
+        label: "개선점",
         title: "다음 회차에서 조정할 점",
         desc: "분석 결과를 보고 가장 먼저 고치고 싶은 한두 가지를 정리하세요.",
         placeholder: "예: 결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
     },
     {
         id: "next",
-        label: "다음 실행",
+        label: "다음 계획",
         title: "다음 연습에서 실제로 할 행동",
         desc: "다음 회차 전에 바로 실행할 수 있는 연습 계획을 적어두세요.",
         placeholder: "예: 마지막 30초 결론부만 따로 3번 녹화해보기.",
     },
 ];
 
-function formatDuration(seconds) {
-    const rounded = Math.max(0, Math.round(seconds));
-    const mins = Math.floor(rounded / 60);
-    const secs = rounded % 60;
-    return mins > 0 ? `${mins}분 ${secs}초` : `${secs}초`;
+function parseDemoTimeToSeconds(time) {
+    const [mins, secs] = String(time || "0:00").split(":").map((part) => Number(part));
+    return (Number.isFinite(mins) ? mins : 0) * 60 + (Number.isFinite(secs) ? secs : 0);
 }
 
 function buildDemoFeedback(item, category, index = 0) {
@@ -135,7 +134,7 @@ export default function FeedbackDemoPage() {
     const [selectedByCategory, setSelectedByCategory] = useState(getInitialSelections);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatInput, setChatInput] = useState("");
-    const [demoReflectionOpen, setDemoReflectionOpen] = useState(true);
+    const [demoReflectionOpen, setDemoReflectionOpen] = useState(false);
     const [activeDemoReflectionStep, setActiveDemoReflectionStep] = useState("keep");
     const [demoReflectionFields, setDemoReflectionFields] = useState({
         keep: "도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
@@ -143,11 +142,26 @@ export default function FeedbackDemoPage() {
         next: "마지막 30초 결론부만 따로 3번 녹화해보기.",
     });
     const [summaryModal, setSummaryModal] = useState(null);
+    const [bottomTab, setBottomTab] = useState("transcript");
+    const [selectedDemoTranscriptIndex, setSelectedDemoTranscriptIndex] = useState(null);
 
     const totalFeedbackCount = useMemo(
         () => FEEDBACK_CATEGORIES.reduce((sum, category) => sum + category.items.length, 0),
         []
     );
+    const demoTranscriptUtterances = useMemo(() => {
+        return DUMMY_TRANSCRIPT.map((utterance, index) => {
+            const startSec = parseDemoTimeToSeconds(utterance.time);
+            const nextStartSec = DUMMY_TRANSCRIPT[index + 1]
+                ? parseDemoTimeToSeconds(DUMMY_TRANSCRIPT[index + 1].time)
+                : startSec + 12;
+            return {
+                ...utterance,
+                startSec,
+                endSec: Math.max(startSec + 1, nextStartSec - 1),
+            };
+        });
+    }, []);
     const activeDemoReflection = DEMO_REFLECTION_STEPS.find((step) => step.id === activeDemoReflectionStep) || DEMO_REFLECTION_STEPS[0];
 
     return (
@@ -156,6 +170,38 @@ export default function FeedbackDemoPage() {
                 <div className="header-content">
                     <h1>발표 분석 결과</h1>
                     <p>더미 발표 영상.mp4</p>
+                </div>
+                <div className="header-reflection-actions" aria-label="성찰 도구">
+                    <button
+                        type="button"
+                        className="analysis-tool-btn note"
+                        onClick={() => setDemoReflectionOpen(true)}
+                    >
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <path d="M14 2v6h6" />
+                            <path d="M16 13H8" />
+                            <path d="M16 17H8" />
+                            <path d="M10 9H8" />
+                        </svg>
+                        <span>성찰 노트</span>
+                    </button>
+                    <button
+                        type="button"
+                        className={`analysis-tool-btn ai ${isChatOpen ? "active" : ""}`}
+                        onClick={() => setIsChatOpen((value) => !value)}
+                    >
+                        {isChatOpen ? (
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M18 6L6 18M6 6l12 12" />
+                            </svg>
+                        ) : (
+                            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            </svg>
+                        )}
+                        <span>{isChatOpen ? "AI 닫기" : "AI 성찰"}</span>
+                    </button>
                 </div>
                 <div className="header-actions">
                     <button type="button" className="btn-outline" onClick={() => router.push("/analysis/test")}>
@@ -179,17 +225,6 @@ export default function FeedbackDemoPage() {
                     </div>
 
                     <div className="summary-container-v2">
-                        <div className="duration-check-card duration-check-warn">
-                            <div className="duration-check-main">
-                                <span className="duration-check-kicker">발표 시간</span>
-                                <strong>{formatDuration(DEMO_ACTUAL_SECONDS - DEMO_EXPECTED_SECONDS)} 초과</strong>
-                                <span className="duration-check-status">조금 초과</span>
-                            </div>
-                            <div className="duration-check-meta">
-                                <span>예상 {formatDuration(DEMO_EXPECTED_SECONDS)}</span>
-                                <span>실제 {formatDuration(DEMO_ACTUAL_SECONDS)}</span>
-                            </div>
-                        </div>
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{DUMMY_SUMMARY.overall}</p>
 
@@ -239,84 +274,73 @@ export default function FeedbackDemoPage() {
                     </div>
                 )}
 
-                <section className={`reflection-note-section ${demoReflectionOpen ? "open" : ""}`}>
-                    <button
-                        type="button"
-                        className="reflection-note-header"
-                        onClick={() => setDemoReflectionOpen((value) => !value)}
-                        aria-expanded={demoReflectionOpen}
-                    >
-                        <div>
-                            <span>성찰 노트</span>
-                            <h2>이번 회차를 다음 연습으로 연결하기</h2>
-                            <p>유지할 점, 바꿀 점, 다음 실행을 짧게 정리해 회차 기록에 남깁니다.</p>
-                        </div>
-                        <strong>{demoReflectionOpen ? "접기" : "이어쓰기"}</strong>
-                    </button>
-
-                    {demoReflectionOpen && (
-                        <div className="reflection-note-body">
-                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
-                                {DEMO_REFLECTION_STEPS.map((step) => (
-                                    <button
-                                        key={step.id}
-                                        type="button"
-                                        role="tab"
-                                        aria-selected={activeDemoReflectionStep === step.id}
-                                        className={activeDemoReflectionStep === step.id ? "active" : ""}
-                                        onClick={() => setActiveDemoReflectionStep(step.id)}
-                                    >
-                                        <span>{step.label}</span>
-                                        {demoReflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="reflection-step-panel">
-                                <div className="reflection-step-copy">
-                                    <h3>{activeDemoReflection.title}</h3>
-                                    <p>{activeDemoReflection.desc}</p>
-                                </div>
-                                <textarea
-                                    value={demoReflectionFields[activeDemoReflection.id] || ""}
-                                    onChange={(event) => setDemoReflectionFields((prev) => ({
-                                        ...prev,
-                                        [activeDemoReflection.id]: event.target.value,
-                                    }))}
-                                    placeholder={activeDemoReflection.placeholder}
-                                    rows={5}
-                                />
-                            </div>
-                            <div className="reflection-note-actions">
-                                <span>더미 화면입니다. 실제 분석 화면에서는 회차 기록에 저장됩니다.</span>
-                                <button type="button" disabled>성찰 저장</button>
-                            </div>
-                        </div>
-                    )}
-                </section>
-
                 <div className="bottom-sections-wrapper">
+                    <div className="bottom-tabs-header" role="tablist" aria-label="분석 자료 보기">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "transcript"}
+                            className={bottomTab === "transcript" ? "active" : ""}
+                            onClick={() => setBottomTab("transcript")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                                <path d="M14 2v5h5" />
+                                <path d="M9 13h6" />
+                                <path d="M9 17h4" />
+                            </svg>
+                            <span>전사 자료 보기</span>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "feedback"}
+                            className={bottomTab === "feedback" ? "active" : ""}
+                            onClick={() => setBottomTab("feedback")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 11l3 3L22 4" />
+                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                            </svg>
+                            <span>영역별 피드백 보기</span>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={bottomTab === "data"}
+                            className={bottomTab === "data" ? "active" : ""}
+                            onClick={() => setBottomTab("data")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 3v18h18" />
+                                <path d="M7 15l4-4 3 3 5-7" />
+                            </svg>
+                            <span>발표 데이터</span>
+                        </button>
+                    </div>
+
+                    <div className="bottom-tabs-panel">
+                        {bottomTab === "transcript" ? (
                     <section className="transcript-section-v2">
-                        <div className="timestamps-header">
-                            <h3>발화 기록</h3>
-                            <span className="timestamps-count">{DUMMY_TRANSCRIPT.length}개 발화</span>
-                        </div>
-                        <div className="transcript-scroll-container">
+                        <div className="transcript-prose-container">
+                            <p className="transcript-prose">
                             {DUMMY_TRANSCRIPT.map((utterance, index) => (
-                                <button key={`${utterance.time}-${index}`} type="button" className="transcript-row">
-                                    <span className="transcript-time">{utterance.time}</span>
-                                    <span className="transcript-text">{utterance.text}</span>
+                                <button
+                                    key={`${utterance.time}-${index}`}
+                                    type="button"
+                                    className={`transcript-prose-segment ${selectedDemoTranscriptIndex === index ? "selected" : ""}`}
+                                    onClick={() => setSelectedDemoTranscriptIndex(index)}
+                                    title={utterance.time}
+                                    aria-label={`${utterance.time} 발화로 이동`}
+                                >
+                                    {utterance.text}
                                 </button>
                             ))}
+                            </p>
                         </div>
                     </section>
-
+                        ) : bottomTab === "feedback" ? (
                     <section className="detailed-feedback-section feedback-demo-section">
-                        <div className="detailed-feedback-header">
-                            <h3>영역별 상세 피드백</h3>
-                            <span className="timestamps-count">{totalFeedbackCount}개 하위 영역</span>
-                        </div>
-                        <p className="timestamps-hint-v2">카드 헤더의 하위 영역을 선택하면 해당 피드백 내용이 표시됩니다</p>
-
                         <div className="feedback-demo-category-row">
                             {FEEDBACK_CATEGORIES.map((category) => {
                                 const selectedItemId = selectedByCategory[category.id];
@@ -388,33 +412,72 @@ export default function FeedbackDemoPage() {
                             })}
                         </div>
                     </section>
+                        ) : (
+                            <PresentationDataVisuals
+                                utterances={demoTranscriptUtterances}
+                                expectedSeconds={DEMO_EXPECTED_SECONDS}
+                                actualSeconds={DEMO_ACTUAL_SECONDS}
+                                onRatePointClick={(point) => setSelectedDemoTranscriptIndex(point.index)}
+                            />
+                        )}
+                    </div>
                 </div>
             </div>
 
-            <button
-                className={`chat-toggle-btn ${isChatOpen ? "open" : ""}`}
-                onClick={() => setIsChatOpen(!isChatOpen)}
-                title="AI 성찰 대화"
-            >
-                {isChatOpen ? (
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                ) : (
-                    <>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                        <span className="chat-toggle-label">AI 성찰</span>
-                    </>
-                )}
-            </button>
+            {demoReflectionOpen && (
+                <div className="reflection-note-modal-backdrop" role="presentation" onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) setDemoReflectionOpen(false);
+                }}>
+                    <section className="reflection-note-modal" role="dialog" aria-modal="true" aria-labelledby="reflection-note-modal-title">
+                        <header className="reflection-note-modal-header">
+                            <div>
+                                <h2 id="reflection-note-modal-title">성찰 노트</h2>
+                            </div>
+                            <button type="button" onClick={() => setDemoReflectionOpen(false)} aria-label="닫기">×</button>
+                        </header>
+
+                        <div className="reflection-note-body reflection-note-modal-body">
+                            <div className="reflection-step-tabs" role="tablist" aria-label="성찰 항목">
+                                {DEMO_REFLECTION_STEPS.map((step) => (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={activeDemoReflectionStep === step.id}
+                                        className={activeDemoReflectionStep === step.id ? "active" : ""}
+                                        onClick={() => setActiveDemoReflectionStep(step.id)}
+                                    >
+                                        <span>{step.label}</span>
+                                        {demoReflectionFields[step.id]?.trim() && <i aria-label="작성됨">✓</i>}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="reflection-step-panel">
+                                <textarea
+                                    value={demoReflectionFields[activeDemoReflection.id] || ""}
+                                    onChange={(event) => setDemoReflectionFields((prev) => ({
+                                        ...prev,
+                                        [activeDemoReflection.id]: event.target.value,
+                                    }))}
+                                    placeholder={activeDemoReflection.placeholder}
+                                    rows={5}
+                                />
+                            </div>
+                            <div className="reflection-note-actions">
+                                <span>더미 화면입니다. 실제 분석 화면에서는 회차 기록에 저장됩니다.</span>
+                                <button type="button" disabled>성찰 저장</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            )}
 
             <div className={`reflection-chat-panel ${isChatOpen ? "open" : ""}`}>
                 <div className="chat-panel-header">
                     <div className="chat-panel-title">
                         <span className="chat-icon">🤔</span>
                         <h3>AI 발표 성찰 대화</h3>
+                        <button type="button" className="chat-panel-close" onClick={() => setIsChatOpen(false)} aria-label="AI 성찰 닫기">×</button>
                     </div>
                     <p className="chat-panel-desc">AI와 함께 발표를 되돌아보며 성찰해보세요</p>
                 </div>
