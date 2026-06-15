@@ -15,11 +15,8 @@ import {
 const generateSimulationCode = () =>
     String(Math.floor(100000 + Math.random() * 900000));
 
-const CROWD_SIZE_OPTIONS = [
-    { id: "small",  label: "소집단", desc: "5명",  count: 5 },
-    { id: "medium", label: "중집단", desc: "10명", count: 10 },
-    { id: "large",  label: "대집단", desc: "16명", count: 16 },
-];
+const DEFAULT_CROWD_SIZE = "large";
+const DEFAULT_AUDIENCE_COUNT = 16;
 
 // 5종 청중 성격 - Unity AudienceManager.sessionPersonalities와 매칭
 const PERSONALITY_TYPES = [
@@ -121,7 +118,6 @@ function SimulationSetupPageContent() {
     const presentationId = searchParams.get("presentationId");
 
     const [prepareData, setPrepareData] = useState(null);
-    const [crowdSize, setCrowdSize] = useState("");
 
     // 청중 성격 비율 (합 100%) - 기본값은 표준 강의실 프리셋
     const [ratios, setRatios] = useState({
@@ -187,7 +183,7 @@ function SimulationSetupPageContent() {
 
     const totalRatio = Object.values(ratios).reduce((s, v) => s + v, 0);
     const ratiosValid = totalRatio === 100;
-    const canStart = crowdSize && ratiosValid && user;
+    const canStart = ratiosValid && user;
 
     const handleRatioChange = (key, value) => {
         const num = Math.max(0, Math.min(100, parseInt(value, 10) || 0));
@@ -259,8 +255,8 @@ function SimulationSetupPageContent() {
 
             // 2) 비율 → 8명 청중 배열로 변환
             const students = ratioToStudents(ratios);
-            const crowdSizeOpt = CROWD_SIZE_OPTIONS.find((o) => o.id === crowdSize);
-            const audienceCount = crowdSizeOpt?.count || 16;
+            const crowdSize = DEFAULT_CROWD_SIZE;
+            const audienceCount = DEFAULT_AUDIENCE_COUNT;
             let attempt = null;
             let recordingUpload = null;
 
@@ -473,7 +469,7 @@ function SimulationSetupPageContent() {
                         이전
                     </button>
                     <h1>시뮬레이션 환경 설정</h1>
-                    <p>가상 청중의 규모와 성격 비율을 설정합니다.</p>
+                    <p>가상 청중의 성격 비율을 설정합니다.</p>
                 </header>
 
                 {/* ── 발표 정보 요약 ── */}
@@ -508,27 +504,6 @@ function SimulationSetupPageContent() {
                                 </span>
                             </div>
                         )}
-                    </div>
-                </section>
-
-                {/* ── 청중 규모 ── */}
-                <section className="sim-setup-section">
-                    <div className="sim-setup-section-header">
-                        <h2>청중 규모</h2>
-                        <span className="required-badge">필수</span>
-                    </div>
-                    <div className="sim-setup-chips-row">
-                        {CROWD_SIZE_OPTIONS.map((opt) => (
-                            <button
-                                key={opt.id}
-                                type="button"
-                                className={`sim-setup-chip ${crowdSize === opt.id ? "selected" : ""}`}
-                                onClick={() => setCrowdSize(opt.id)}
-                            >
-                                <span className="sim-chip-label">{opt.label}</span>
-                                <span className="sim-chip-desc">{opt.desc}</span>
-                            </button>
-                        ))}
                     </div>
                 </section>
 

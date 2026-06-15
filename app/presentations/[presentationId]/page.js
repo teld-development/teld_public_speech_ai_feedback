@@ -21,11 +21,8 @@ import {
 } from "../../lib/presentations";
 
 const WAITING_CLEANUP_MINUTES = 30;
-const CROWD_SIZE_OPTIONS = [
-    { id: "small", label: "소집단", desc: "5명", count: 5 },
-    { id: "medium", label: "중집단", desc: "10명", count: 10 },
-    { id: "large", label: "대집단", desc: "16명", count: 16 },
-];
+const DEFAULT_CROWD_SIZE = "medium";
+const DEFAULT_AUDIENCE_COUNT = 10;
 
 const PERSONALITY_TYPES = [
     { id: "friendly", label: "우호적", desc: "관심 갖고 경청", color: "#22c55e" },
@@ -371,7 +368,6 @@ export default function PresentationDetailPage({ params }) {
     const [modalError, setModalError] = useState("");
     const [showAllAttempts, setShowAllAttempts] = useState(false);
     const [activeRecordTab, setActiveRecordTab] = useState("scores");
-    const [crowdSize, setCrowdSize] = useState("medium");
     const [ratios, setRatios] = useState(AUDIENCE_PRESETS[1].ratios);
     const [selectedPreset, setSelectedPreset] = useState("standard");
     const [showCustomAudience, setShowCustomAudience] = useState(false);
@@ -722,7 +718,7 @@ export default function PresentationDetailPage({ params }) {
     };
 
     const handleStartSimulation = async () => {
-        if (!user || !presentation || !crowdSize || !ratiosValid || startingSimulation) return;
+        if (!user || !presentation || !ratiosValid || startingSimulation) return;
         setStartingSimulation(true);
         setModalError("");
 
@@ -762,8 +758,8 @@ export default function PresentationDetailPage({ params }) {
 
             setSimulationStatus("시뮬레이션 세션을 생성 중...");
             const students = ratioToStudents(ratios);
-            const crowdSizeOpt = CROWD_SIZE_OPTIONS.find((option) => option.id === crowdSize);
-            const audienceCount = crowdSizeOpt?.count || 10;
+            const crowdSize = DEFAULT_CROWD_SIZE;
+            const audienceCount = DEFAULT_AUDIENCE_COUNT;
             const attempt = await createPresentationAttempt(user, presentationId, "simulation");
             const recordingUpload = buildRecordingUpload({
                 ownerUid: user.uid,
@@ -1351,29 +1347,12 @@ export default function PresentationDetailPage({ params }) {
                         <header className="session-flow-modal-header">
                             <div>
                                 <p>시뮬레이션 설정</p>
-                                <h2 id="simulation-modal-title">청중 규모와 분위기를 선택하세요</h2>
+                                <h2 id="simulation-modal-title">청중 분위기를 선택하세요</h2>
                             </div>
                             <button type="button" className="session-flow-close" onClick={closeModal} disabled={startingSimulation} title="닫기" aria-label="닫기">×</button>
                         </header>
 
                         <div className="session-flow-body">
-                            <div className="session-modal-section">
-                                <h3>청중 규모</h3>
-                                <div className="session-choice-row">
-                                    {CROWD_SIZE_OPTIONS.map((option) => (
-                                        <button
-                                            key={option.id}
-                                            type="button"
-                                            className={`session-choice ${crowdSize === option.id ? "selected" : ""}`}
-                                            onClick={() => setCrowdSize(option.id)}
-                                        >
-                                            <strong>{option.label}</strong>
-                                            <span>{option.desc}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
                             <div className="session-modal-section">
                                 <h3>청중 환경</h3>
                                 <p className="session-modal-help">발표 상황에 맞는 청중 구성을 선택하세요. 세부 비율은 직접 조정할 수도 있습니다.</p>
@@ -1482,7 +1461,7 @@ export default function PresentationDetailPage({ params }) {
 
                         <footer className="session-flow-actions">
                             <button type="button" className="btn-secondary" onClick={closeModal} disabled={startingSimulation}>취소</button>
-                            <button type="button" className="btn-primary" onClick={handleStartSimulation} disabled={!crowdSize || !ratiosValid || startingSimulation}>
+                            <button type="button" className="btn-primary" onClick={handleStartSimulation} disabled={!ratiosValid || startingSimulation}>
                                 {startingSimulation ? "준비 중..." : "시뮬레이션 시작"}
                             </button>
                         </footer>

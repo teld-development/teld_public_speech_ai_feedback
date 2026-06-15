@@ -9,6 +9,14 @@ import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
 import PresentationDataVisuals from "../components/PresentationDataVisuals";
 
+const PDFJS_VERSION = "4.10.38";
+
+async function loadPdfJs() {
+    const pdfjsLib = await import(/* webpackIgnore: true */ `/pdf.min.mjs?v=${PDFJS_VERSION}`);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs?v=${PDFJS_VERSION}`;
+    return pdfjsLib;
+}
+
 function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
     return FEEDBACK_CATEGORIES.reduce((acc, category) => {
         const firstActiveItem = category.items.find((item) => activeItemIds.includes(item.id));
@@ -158,11 +166,14 @@ function buildSlideDeckFromSimulation(simulation = {}) {
     const nested = simulation?.simulation && typeof simulation.simulation === "object"
         ? simulation.simulation
         : {};
-    const slideImageUrls = Array.isArray(nested.slideImageUrls)
-        ? nested.slideImageUrls
-        : Array.isArray(simulation?.slideImageUrls)
-            ? simulation.slideImageUrls
-            : [];
+    const slideImageCandidates = [
+        nested.slideImageUrls,
+        simulation?.slideImageUrls,
+        simulation?.slideImages,
+    ];
+    const slideImageUrls = slideImageCandidates.find((candidate) =>
+        Array.isArray(candidate) && candidate.some((url) => typeof url === "string" && url.trim())
+    ) || [];
     const pdfUrl = nested.pdfUrl
         || simulation?.pdfUrl
         || simulation?.presentationMaterial?.url
@@ -186,9 +197,64 @@ function mergeSlideDecks(primary, fallback) {
     };
 }
 
-function buildPdfPageUrl(pdfUrl, page) {
-    const baseUrl = String(pdfUrl || "").split("#")[0];
-    return baseUrl ? `${baseUrl}#page=${page}` : "";
+async function loadPdfDocument(pdfjsLib, sourceUrl) {
+    const proxyResponse = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(sourceUrl)}`, {
+        cache: "force-cache",
+    });
+
+    if (proxyResponse.ok) {
+        const pdfBytes = new Uint8Array(await proxyResponse.arrayBuffer());
+        return pdfjsLib.getDocument({ data: pdfBytes }).promise;
+    }
+
+    let detail = "";
+    try {
+        const body = await proxyResponse.json();
+        detail = body?.error ? `: ${body.error}` : "";
+    } catch {
+        detail = "";
+    }
+
+    try {
+        return await pdfjsLib.getDocument({
+            url: sourceUrl,
+            disableAutoFetch: true,
+            disableRange: true,
+            disableStream: true,
+        }).promise;
+    } catch (directError) {
+        throw new Error(
+            `PDF 파일을 불러오지 못했습니다. (프록시 HTTP ${proxyResponse.status}${detail}, 직접 로딩: ${directError.message})`
+        );
+    }
+}
+
+async function renderPdfPageToDataUrl(pdfUrl, pageNumber) {
+    const sourceUrl = String(pdfUrl || "").split("#")[0];
+    const safePage = Number.parseInt(pageNumber, 10);
+    if (!sourceUrl || !Number.isFinite(safePage) || safePage < 1) {
+        throw new Error("PDF 페이지 정보가 올바르지 않습니다.");
+    }
+
+    const pdfjsLib = await loadPdfJs();
+    const pdf = await loadPdfDocument(pdfjsLib, sourceUrl);
+
+    try {
+        const page = await pdf.getPage(Math.min(safePage, pdf.numPages));
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        if (!context) {
+            throw new Error("PDF 페이지 렌더링 컨텍스트를 만들 수 없습니다.");
+        }
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+
+        await page.render({ canvasContext: context, viewport }).promise;
+        return canvas.toDataURL("image/png");
+    } finally {
+        await pdf.destroy();
+    }
 }
 
 export default function AnalysisPage() {
@@ -196,6 +262,7 @@ export default function AnalysisPage() {
     const { user } = useAuth();
     const videoRef = useRef(null);
     const chatEndRef = useRef(null);
+    const pdfRenderCacheRef = useRef(new Map());
 
     const [isLoading, setIsLoading] = useState(true);
     const [analysisData, setAnalysisData] = useState(null);
@@ -352,10 +419,59 @@ export default function AnalysisPage() {
     const currentSlideImageUrl = currentSlide
         ? slideDeck.slideImageUrls[currentSlide.page - 1] || ""
         : "";
-    const currentSlidePdfUrl = currentSlide && !currentSlideImageUrl
-        ? buildPdfPageUrl(slideDeck.pdfUrl, currentSlide.page)
+    const pdfRenderKey = currentSlide && !currentSlideImageUrl && slideDeck.pdfUrl
+        ? `${slideDeck.pdfUrl}::${currentSlide.page}`
         : "";
-    const hasSyncedMaterial = Boolean(currentSlide && (currentSlideImageUrl || currentSlidePdfUrl));
+    const [renderedPdfSlide, setRenderedPdfSlide] = useState({
+        key: "",
+        url: "",
+        loading: false,
+        error: "",
+    });
+
+    useEffect(() => {
+        if (!pdfRenderKey || !currentSlide) {
+            setRenderedPdfSlide({ key: "", url: "", loading: false, error: "" });
+            return undefined;
+        }
+
+        const cachedUrl = pdfRenderCacheRef.current.get(pdfRenderKey);
+        if (cachedUrl) {
+            setRenderedPdfSlide({ key: pdfRenderKey, url: cachedUrl, loading: false, error: "" });
+            return undefined;
+        }
+
+        let cancelled = false;
+        setRenderedPdfSlide({ key: pdfRenderKey, url: "", loading: true, error: "" });
+
+        (async () => {
+            try {
+                const dataUrl = await renderPdfPageToDataUrl(slideDeck.pdfUrl, currentSlide.page);
+                if (cancelled) return;
+                pdfRenderCacheRef.current.set(pdfRenderKey, dataUrl);
+                setRenderedPdfSlide({ key: pdfRenderKey, url: dataUrl, loading: false, error: "" });
+            } catch (err) {
+                console.warn("[Analysis] PDF 페이지 렌더링 실패:", err);
+                if (!cancelled) {
+                    setRenderedPdfSlide({
+                        key: pdfRenderKey,
+                        url: "",
+                        loading: false,
+                        error: `현재 페이지를 이미지로 렌더링하지 못했습니다. (${err.message || "원인 불명"})`,
+                    });
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [pdfRenderKey, slideDeck.pdfUrl, currentSlide]);
+
+    const renderedPdfSlideUrl = renderedPdfSlide.key === pdfRenderKey ? renderedPdfSlide.url : "";
+    const isRenderingPdfSlide = renderedPdfSlide.key === pdfRenderKey && renderedPdfSlide.loading;
+    const pdfSlideError = renderedPdfSlide.key === pdfRenderKey ? renderedPdfSlide.error : "";
+    const hasSyncedMaterial = Boolean(currentSlide && (currentSlideImageUrl || renderedPdfSlideUrl || isRenderingPdfSlide));
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -634,11 +750,10 @@ export default function AnalysisPage() {
                                 ) : hasSyncedMaterial ? (
                                     currentSlideImageUrl ? (
                                         <img src={currentSlideImageUrl} alt={`발표자료 ${currentSlide.page}페이지`} />
+                                    ) : renderedPdfSlideUrl ? (
+                                        <img src={renderedPdfSlideUrl} alt={`발표자료 ${currentSlide.page}페이지`} />
                                     ) : (
-                                        <iframe
-                                            src={currentSlidePdfUrl}
-                                            title={`발표자료 ${currentSlide.page}페이지`}
-                                        />
+                                        <div className="slide-sync-empty">현재 페이지 렌더링 중...</div>
                                     )
                                 ) : (
                                     <div className="slide-sync-empty">발표자료 없음</div>
@@ -649,6 +764,9 @@ export default function AnalysisPage() {
                             )}
                             {slideDeck.error && !hasSyncedMaterial && (
                                 <p className="slide-sync-hint">{slideDeck.error}</p>
+                            )}
+                            {pdfSlideError && (
+                                <p className="slide-sync-hint">{pdfSlideError}</p>
                             )}
                         </section>
 

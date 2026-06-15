@@ -9,6 +9,14 @@
 import { storage } from "./firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
+const PDFJS_VERSION = "4.10.38";
+
+async function loadPdfJs() {
+    const pdfjsLib = await import(/* webpackIgnore: true */ `/pdf.min.mjs?v=${PDFJS_VERSION}`);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs?v=${PDFJS_VERSION}`;
+    return pdfjsLib;
+}
+
 /**
  * PDF 바이트 배열을 PNG 이미지 Blob 배열로 변환.
  * @param {Uint8Array | ArrayBuffer} pdfBytes - PDF 파일 바이트
@@ -18,10 +26,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
  * @returns {Promise<Blob[]>} 페이지별 PNG Blob 배열
  */
 export async function pdfToImageBlobs(pdfBytes, { scale = 1.5, onProgress } = {}) {
-    // ★ 동적 import: Next.js SSR에서 window 참조 에러 방지
-    const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
-    // 워커 경로 설정 (public 폴더에 미리 복사해 둠)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    const pdfjsLib = await loadPdfJs();
 
     const data = pdfBytes instanceof ArrayBuffer ? new Uint8Array(pdfBytes) : pdfBytes;
     const loadingTask = pdfjsLib.getDocument({ data });
