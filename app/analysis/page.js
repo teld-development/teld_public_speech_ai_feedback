@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
@@ -109,6 +109,88 @@ function parseTimeToSeconds(timeStr) {
     return 0;
 }
 
+function parseTimelineTimeToSeconds(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+    const text = String(value || "").trim();
+    if (!text) return null;
+    const parts = text.split(":").map((part) => Number(part.trim()));
+    if (parts.length === 2 && parts.every(Number.isFinite)) return Math.max(0, parts[0] * 60 + parts[1]);
+    if (parts.length === 3 && parts.every(Number.isFinite)) return Math.max(0, parts[0] * 3600 + parts[1] * 60 + parts[2]);
+    return null;
+}
+
+function parseSlideTimeline(value) {
+    let timeline = value;
+    if (typeof timeline === "string") {
+        const trimmed = timeline.trim();
+        if (!trimmed) return [];
+        try {
+            timeline = JSON.parse(trimmed);
+        } catch (err) {
+            console.warn("[Analysis] slideTimeline JSON 파싱 실패:", err);
+            return [];
+        }
+    }
+
+    const rawSlides = Array.isArray(timeline?.slides)
+        ? timeline.slides
+        : Array.isArray(timeline)
+            ? timeline
+            : [];
+
+    return rawSlides
+        .map((slide) => {
+            const seconds = parseTimelineTimeToSeconds(slide?.t ?? slide?.timeFormatted);
+            const page = Number.parseInt(slide?.page, 10);
+            if (seconds == null || !Number.isFinite(page) || page < 1) return null;
+            return {
+                t: seconds,
+                timeFormatted: String(slide?.timeFormatted || "").trim(),
+                page,
+                content: String(slide?.content || "").trim(),
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.t - b.t);
+}
+
+function buildSlideDeckFromSimulation(simulation = {}) {
+    const nested = simulation?.simulation && typeof simulation.simulation === "object"
+        ? simulation.simulation
+        : {};
+    const slideImageUrls = Array.isArray(nested.slideImageUrls)
+        ? nested.slideImageUrls
+        : Array.isArray(simulation?.slideImageUrls)
+            ? simulation.slideImageUrls
+            : [];
+    const pdfUrl = nested.pdfUrl
+        || simulation?.pdfUrl
+        || simulation?.presentationMaterial?.url
+        || "";
+    return {
+        slides: parseSlideTimeline(simulation?.slideTimeline ?? nested.slideTimeline),
+        slideImageUrls: slideImageUrls.filter(Boolean),
+        pdfUrl,
+        loading: false,
+        error: "",
+    };
+}
+
+function mergeSlideDecks(primary, fallback) {
+    return {
+        slides: primary.slides.length > 0 ? primary.slides : fallback.slides,
+        slideImageUrls: primary.slideImageUrls.length > 0 ? primary.slideImageUrls : fallback.slideImageUrls,
+        pdfUrl: primary.pdfUrl || fallback.pdfUrl,
+        loading: false,
+        error: primary.error || fallback.error || "",
+    };
+}
+
+function buildPdfPageUrl(pdfUrl, page) {
+    const baseUrl = String(pdfUrl || "").split("#")[0];
+    return baseUrl ? `${baseUrl}#page=${page}` : "";
+}
+
 export default function AnalysisPage() {
     const router = useRouter();
     const { user } = useAuth();
@@ -139,6 +221,8 @@ export default function AnalysisPage() {
     const [reflectionStatus, setReflectionStatus] = useState("");
     const [summaryModal, setSummaryModal] = useState(null);
     const [bottomTab, setBottomTab] = useState("data");
+    const [videoCurrentSeconds, setVideoCurrentSeconds] = useState(0);
+    const [slideDeck, setSlideDeck] = useState(() => buildSlideDeckFromSimulation());
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -205,6 +289,40 @@ export default function AnalysisPage() {
         });
     }, [selectedItemIds]);
 
+    useEffect(() => {
+        const simulation = analysisContext?.simulation || null;
+        const localDeck = buildSlideDeckFromSimulation(simulation || {});
+        const simulationCode = simulation?.code;
+
+        if (!simulationCode) {
+            setSlideDeck(localDeck);
+            return undefined;
+        }
+
+        let cancelled = false;
+        setSlideDeck({ ...localDeck, loading: true, error: "" });
+
+        (async () => {
+            try {
+                const simulationSnap = await getDoc(doc(db, "simulations", simulationCode));
+                if (cancelled) return;
+                const remoteDeck = simulationSnap.exists()
+                    ? buildSlideDeckFromSimulation(simulationSnap.data())
+                    : buildSlideDeckFromSimulation();
+                setSlideDeck(mergeSlideDecks(remoteDeck, localDeck));
+            } catch (err) {
+                console.warn("[Analysis] 발표자료 timeline 조회 실패:", err);
+                if (!cancelled) {
+                    setSlideDeck({ ...localDeck, loading: false, error: "발표자료를 불러오지 못했습니다." });
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [analysisContext]);
+
     const { timestamps = [], scores = {}, summary = {}, transcript = null } = analysisData || {};
     const transcriptUtterances = Array.isArray(transcript?.utterances) ? transcript.utterances : [];
     const expectedDurationSeconds = useMemo(
@@ -222,6 +340,22 @@ export default function AnalysisPage() {
         return candidates.length ? Math.max(...candidates) : null;
     }, [timestamps, transcriptUtterances]);
     const displayActualSeconds = Number.isFinite(actualVideoSeconds) ? actualVideoSeconds : fallbackActualSeconds;
+    const currentSlide = useMemo(() => {
+        if (!slideDeck.slides.length) return null;
+        let activeSlide = slideDeck.slides[0];
+        for (const slide of slideDeck.slides) {
+            if (slide.t <= videoCurrentSeconds + 0.1) activeSlide = slide;
+            else break;
+        }
+        return activeSlide;
+    }, [slideDeck.slides, videoCurrentSeconds]);
+    const currentSlideImageUrl = currentSlide
+        ? slideDeck.slideImageUrls[currentSlide.page - 1] || ""
+        : "";
+    const currentSlidePdfUrl = currentSlide && !currentSlideImageUrl
+        ? buildPdfPageUrl(slideDeck.pdfUrl, currentSlide.page)
+        : "";
+    const hasSyncedMaterial = Boolean(currentSlide && (currentSlideImageUrl || currentSlidePdfUrl));
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
 
@@ -242,6 +376,7 @@ export default function AnalysisPage() {
         setSelectedTimestamp(timestamp);
         if (videoRef.current && timestamp.seconds !== undefined) {
             videoRef.current.currentTime = timestamp.seconds;
+            setVideoCurrentSeconds(timestamp.seconds);
             videoRef.current.play();
         }
     };
@@ -251,6 +386,7 @@ export default function AnalysisPage() {
         setSelectedTimestamp({ ...utterance, seconds, kind: "transcript", index });
         if (videoRef.current) {
             videoRef.current.currentTime = seconds;
+            setVideoCurrentSeconds(seconds);
             videoRef.current.play();
         }
     };
@@ -463,7 +599,11 @@ export default function AnalysisPage() {
                                 className="video-player-v2"
                                 src={videoUrl}
                                 controls
-                                onLoadedMetadata={(event) => setActualVideoSeconds(event.currentTarget.duration)}
+                                onLoadedMetadata={(event) => {
+                                    setActualVideoSeconds(event.currentTarget.duration);
+                                    setVideoCurrentSeconds(event.currentTarget.currentTime || 0);
+                                }}
+                                onTimeUpdate={(event) => setVideoCurrentSeconds(event.currentTarget.currentTime || 0)}
                             >
                                 브라우저가 비디오 재생을 지원하지 않습니다.
                             </video>
@@ -478,6 +618,40 @@ export default function AnalysisPage() {
                     </div>
 
                     <div className="summary-container-v2">
+                        <section className={`slide-sync-panel ${hasSyncedMaterial ? "" : "empty"}`}>
+                            <div className="slide-sync-header">
+                                <div>
+                                    <span>발표자료</span>
+                                    <strong>{currentSlide ? `${currentSlide.page}페이지` : "발표자료 없음"}</strong>
+                                </div>
+                                {currentSlide && (
+                                    <time>{currentSlide.timeFormatted || formatSecondsForDisplay(currentSlide.t)}</time>
+                                )}
+                            </div>
+                            <div className="slide-sync-preview">
+                                {slideDeck.loading ? (
+                                    <div className="slide-sync-empty">발표자료 확인 중...</div>
+                                ) : hasSyncedMaterial ? (
+                                    currentSlideImageUrl ? (
+                                        <img src={currentSlideImageUrl} alt={`발표자료 ${currentSlide.page}페이지`} />
+                                    ) : (
+                                        <iframe
+                                            src={currentSlidePdfUrl}
+                                            title={`발표자료 ${currentSlide.page}페이지`}
+                                        />
+                                    )
+                                ) : (
+                                    <div className="slide-sync-empty">발표자료 없음</div>
+                                )}
+                            </div>
+                            {currentSlide?.content && hasSyncedMaterial && (
+                                <p className="slide-sync-hint">{currentSlide.content}</p>
+                            )}
+                            {slideDeck.error && !hasSyncedMaterial && (
+                                <p className="slide-sync-hint">{slideDeck.error}</p>
+                            )}
+                        </section>
+
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{summary.overall}</p>
 

@@ -508,6 +508,7 @@ export default function PresentationDetailPage({ params }) {
             presentationId,
             attemptId: attempt.id,
             attemptNo: attempt.attemptNo || null,
+            simulation: attempt.simulation || null,
             reflectionNote: attempt.reflectionNote || "",
             reflectionFields: attempt.reflectionFields || null,
         }));
