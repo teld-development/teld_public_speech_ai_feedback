@@ -256,6 +256,14 @@ export default function SimulationWaitingPage({ params }) {
                                     presentationId: data.presentationId,
                                     attemptId: data.attemptId,
                                     attemptNo: data.attemptNo || null,
+                                    simulation: {
+                                        code,
+                                        backendSessionId: data.backendSessionId || "",
+                                        slideTimeline: data.slideTimeline || "",
+                                        presentationMaterial: data.presentationMaterial || null,
+                                        slideImageUrls: data.simulation?.slideImageUrls || [],
+                                        pdfUrl: data.simulation?.pdfUrl || data.presentationMaterial?.url || "",
+                                    },
                                     reflectionNote: "",
                                     reflectionFields: {},
                                 }));
