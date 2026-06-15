@@ -734,68 +734,70 @@ export default function AnalysisPage() {
                     </div>
 
                     <div className="summary-container-v2">
-                        <section className={`slide-sync-panel ${hasSyncedMaterial ? "" : "empty"}`}>
-                            <div className="slide-sync-header">
-                                <div>
-                                    <span>발표자료</span>
-                                    <strong>{currentSlide ? `${currentSlide.page}페이지` : "발표자료 없음"}</strong>
-                                </div>
-                                {currentSlide && (
-                                    <time>{currentSlide.timeFormatted || formatSecondsForDisplay(currentSlide.t)}</time>
-                                )}
-                            </div>
-                            <div className="slide-sync-preview">
-                                {slideDeck.loading ? (
-                                    <div className="slide-sync-empty">발표자료 확인 중...</div>
-                                ) : hasSyncedMaterial ? (
-                                    currentSlideImageUrl ? (
-                                        <img src={currentSlideImageUrl} alt={`발표자료 ${currentSlide.page}페이지`} />
-                                    ) : renderedPdfSlideUrl ? (
-                                        <img src={renderedPdfSlideUrl} alt={`발표자료 ${currentSlide.page}페이지`} />
-                                    ) : (
-                                        <div className="slide-sync-empty">현재 페이지 렌더링 중...</div>
-                                    )
-                                ) : (
-                                    <div className="slide-sync-empty">발표자료 없음</div>
-                                )}
-                            </div>
-                            {currentSlide?.content && hasSyncedMaterial && (
-                                <p className="slide-sync-hint">{currentSlide.content}</p>
-                            )}
-                            {slideDeck.error && !hasSyncedMaterial && (
-                                <p className="slide-sync-hint">{slideDeck.error}</p>
-                            )}
-                            {pdfSlideError && (
-                                <p className="slide-sync-hint">{pdfSlideError}</p>
-                            )}
-                        </section>
-
                         <h3>종합 피드백</h3>
                         <p className="summary-overall">{summary.overall}</p>
 
-                        <div className="summary-lists">
-                            <button
-                                type="button"
-                                className="summary-card-trigger strengths"
-                                onClick={() => setSummaryModal({ title: "강점", tone: "strengths", items: summary.strengths || [] })}
-                            >
-                                <span>
-                                    <strong>강점 확인</strong>
-                                    <small>잘된 부분 모아보기</small>
-                                </span>
-                                <i aria-hidden="true">→</i>
-                            </button>
-                            <button
-                                type="button"
-                                className="summary-card-trigger suggestions"
-                                onClick={() => setSummaryModal({ title: "개선 제안", tone: "suggestions", items: summary.suggestions || [] })}
-                            >
-                                <span>
-                                    <strong>개선점 확인</strong>
-                                    <small>다음 연습 포인트 보기</small>
-                                </span>
-                                <i aria-hidden="true">→</i>
-                            </button>
+                        <div className="summary-detail-grid">
+                            <section className={`slide-sync-panel ${hasSyncedMaterial ? "" : "empty"}`}>
+                                <div className="slide-sync-header">
+                                    <div>
+                                        <span>발표자료</span>
+                                        <strong>{currentSlide ? `${currentSlide.page}페이지` : "발표자료 없음"}</strong>
+                                    </div>
+                                    {currentSlide && (
+                                        <time>{currentSlide.timeFormatted || formatSecondsForDisplay(currentSlide.t)}</time>
+                                    )}
+                                </div>
+                                <div className="slide-sync-preview">
+                                    {slideDeck.loading ? (
+                                        <div className="slide-sync-empty">발표자료 확인 중...</div>
+                                    ) : hasSyncedMaterial ? (
+                                        currentSlideImageUrl ? (
+                                            <img src={currentSlideImageUrl} alt={`발표자료 ${currentSlide.page}페이지`} />
+                                        ) : renderedPdfSlideUrl ? (
+                                            <img src={renderedPdfSlideUrl} alt={`발표자료 ${currentSlide.page}페이지`} />
+                                        ) : (
+                                            <div className="slide-sync-empty">현재 페이지 렌더링 중...</div>
+                                        )
+                                    ) : (
+                                        <div className="slide-sync-empty">발표자료 없음</div>
+                                    )}
+                                </div>
+                                {currentSlide?.content && hasSyncedMaterial && (
+                                    <p className="slide-sync-hint">{currentSlide.content}</p>
+                                )}
+                                {slideDeck.error && !hasSyncedMaterial && (
+                                    <p className="slide-sync-hint">{slideDeck.error}</p>
+                                )}
+                                {pdfSlideError && (
+                                    <p className="slide-sync-hint">{pdfSlideError}</p>
+                                )}
+                            </section>
+
+                            <div className="summary-lists summary-lists-stack">
+                                <button
+                                    type="button"
+                                    className="summary-card-trigger strengths"
+                                    onClick={() => setSummaryModal({ title: "강점", tone: "strengths", items: summary.strengths || [] })}
+                                >
+                                    <span>
+                                        <strong>강점 확인</strong>
+                                        <small>잘된 부분 모아보기</small>
+                                    </span>
+                                    <i aria-hidden="true">→</i>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="summary-card-trigger suggestions"
+                                    onClick={() => setSummaryModal({ title: "개선 제안", tone: "suggestions", items: summary.suggestions || [] })}
+                                >
+                                    <span>
+                                        <strong>개선점 확인</strong>
+                                        <small>다음 연습 포인트 보기</small>
+                                    </span>
+                                    <i aria-hidden="true">→</i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </section>
