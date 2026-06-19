@@ -187,6 +187,171 @@ function buildSlideDeckFromSimulation(simulation = {}) {
     };
 }
 
+function parseMaybeJson(value) {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+        return JSON.parse(trimmed);
+    } catch {
+        return value;
+    }
+}
+
+function firstText(...values) {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim()) return value.trim();
+        if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    }
+    return "";
+}
+
+function cleanQaTranscriptText(value) {
+    return String(value || "")
+        .split(/\n+/)
+        .map((line) => line
+            .replace(/^\s*\[\d+\s*번\]\s*/g, "")
+            .replace(/^\s*\d+\s*[.)]\s*/g, "")
+            .replace(/\s*속도\s*:\s*[-+]?\d+(?:\.\d+)?\s*(?:\([^)]*\))?\s*$/g, "")
+            .replace(/\[(?:두근|웃음|박수|침묵|무음|소음|잡음|기침|한숨|숨소리|호흡|음악|효과음)[^\]]*\]/g, "")
+            .replace(/^["“”']+|["“”']+$/g, "")
+            .replace(/\s+/g, " ")
+            .trim())
+        .filter(Boolean)
+        .join("\n");
+}
+
+function formatTranscriptValue(value) {
+    const parsed = parseMaybeJson(value);
+    if (!parsed) return "";
+    if (typeof parsed === "string") return cleanQaTranscriptText(parsed);
+    if (Array.isArray(parsed)) {
+        return parsed
+            .map((entry) => {
+                if (typeof entry === "string") return cleanQaTranscriptText(entry);
+                if (!entry || typeof entry !== "object") return "";
+                const speaker = firstText(entry.speaker, entry.role, entry.name);
+                const text = cleanQaTranscriptText(firstText(
+                    entry.text,
+                    entry.transcript,
+                    entry.content,
+                    entry.answer,
+                    entry.answerText,
+                    entry.response
+                ));
+                return speaker && text ? `${speaker}: ${text}` : text;
+            })
+            .filter(Boolean)
+            .join("\n");
+    }
+    if (typeof parsed === "object") {
+        return cleanQaTranscriptText(firstText(
+            parsed.text,
+            parsed.transcript,
+            parsed.answerTranscript,
+            parsed.answerText,
+            parsed.answer,
+            parsed.content,
+            parsed.response
+        ));
+    }
+    return "";
+}
+
+function normalizeQaItem(item = {}, index = 0, companion = {}) {
+    const answerSource = item.answer && typeof item.answer === "object" ? item.answer : {};
+    const feedbackSource = item.feedback && typeof item.feedback === "object" ? item.feedback : {};
+    return {
+        id: firstText(item.id, item.questionId, companion.id) || `qa-${index}`,
+        index: index + 1,
+        question: firstText(
+            item.questionText,
+            item.question,
+            item.question_text,
+            item.q,
+            companion.questionText,
+            companion.question
+        ),
+        answerTranscript: formatTranscriptValue(
+            item.answerTranscript
+            ?? item.answer_transcript
+            ?? item.responseTranscript
+            ?? item.transcriptText
+            ?? item.answerText
+            ?? item.response
+            ?? item.answer
+            ?? item.transcript
+            ?? answerSource.transcript
+            ?? answerSource.text
+            ?? answerSource.content
+            ?? companion.answerTranscript
+            ?? companion.answerText
+            ?? companion.answer
+        ),
+        aiFeedback: firstText(
+            item.aiFeedback,
+            item.feedbackText,
+            item.feedback,
+            item.evaluation,
+            item.comment,
+            feedbackSource.text,
+            feedbackSource.summary,
+            companion.aiFeedback,
+            companion.feedbackText,
+            companion.feedback
+        ),
+        type: firstText(item.type, item.questionType, companion.type),
+        target: firstText(item.targetStudentIndex, item.studentIndex, item.studentId, companion.targetStudentIndex),
+        chunkIndex: firstText(item.chunkIndex, companion.chunkIndex),
+    };
+}
+
+function normalizeQaResults(rawQaResults) {
+    const parsed = parseMaybeJson(rawQaResults);
+    if (!parsed) return [];
+
+    let rows = [];
+    let answers = [];
+    let feedbacks = [];
+
+    if (Array.isArray(parsed)) {
+        rows = parsed;
+    } else if (typeof parsed === "object") {
+        rows = parsed.items
+            || parsed.results
+            || parsed.qa
+            || parsed.qas
+            || parsed.records
+            || parsed.questions
+            || [];
+        answers = Array.isArray(parsed.answers) ? parsed.answers : [];
+        feedbacks = Array.isArray(parsed.feedbacks) ? parsed.feedbacks : [];
+
+        if (!Array.isArray(rows)) {
+            rows = [];
+        }
+
+        if (rows.length === 0) {
+            rows = Object.entries(parsed)
+                .filter(([key, value]) => /^q(?:uestion)?\d+$/i.test(key) || (value && typeof value === "object"))
+                .map(([, value]) => value);
+        }
+    }
+
+    return rows
+        .slice(0, 3)
+        .map((item, index) => {
+            const parsedItem = parseMaybeJson(item);
+            const safeItem = typeof parsedItem === "string" ? { questionText: parsedItem } : (parsedItem || {});
+            const companion = {
+                ...(answers[index] && typeof answers[index] === "object" ? answers[index] : { answer: answers[index] }),
+                ...(feedbacks[index] && typeof feedbacks[index] === "object" ? feedbacks[index] : { feedback: feedbacks[index] }),
+            };
+            return normalizeQaItem(safeItem, index, companion);
+        })
+        .filter((item) => item.question || item.answerTranscript || item.aiFeedback);
+}
+
 function mergeSlideDecks(primary, fallback) {
     return {
         slides: primary.slides.length > 0 ? primary.slides : fallback.slides,
@@ -290,6 +455,7 @@ export default function AnalysisPage() {
     const [bottomTab, setBottomTab] = useState("data");
     const [videoCurrentSeconds, setVideoCurrentSeconds] = useState(0);
     const [slideDeck, setSlideDeck] = useState(() => buildSlideDeckFromSimulation());
+    const [qaPanel, setQaPanel] = useState({ items: [], loading: false, error: "" });
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -323,7 +489,7 @@ export default function AnalysisPage() {
 
                 setChatMessages([{
                     role: "assistant",
-                    content: "안녕하세요! 이번 발표에 대해 함께 성찰해볼까요? 🎤\n\n분석 결과를 바탕으로 궁금한 점이나 더 깊이 이야기하고 싶은 부분이 있으시면 말씀해주세요."
+                    content: "안녕하세요! 이번 발표에 대해 함께 성찰해볼까요?\n\n분석 결과를 바탕으로 궁금한 점이나 더 깊이 이야기하고 싶은 부분이 있으시면 말씀해주세요."
                 }]);
             } catch (err) {
                 setError("분석 결과를 불러오는 데 실패했습니다.");
@@ -359,28 +525,43 @@ export default function AnalysisPage() {
     useEffect(() => {
         const simulation = analysisContext?.simulation || null;
         const localDeck = buildSlideDeckFromSimulation(simulation || {});
+        const localQaItems = normalizeQaResults(simulation?.qaResults);
         const simulationCode = simulation?.code;
 
         if (!simulationCode) {
             setSlideDeck(localDeck);
+            setQaPanel({ items: localQaItems, loading: false, error: "" });
             return undefined;
         }
 
         let cancelled = false;
         setSlideDeck({ ...localDeck, loading: true, error: "" });
+        setQaPanel({ items: localQaItems, loading: true, error: "" });
 
         (async () => {
             try {
                 const simulationSnap = await getDoc(doc(db, "simulations", simulationCode));
                 if (cancelled) return;
+                const remoteData = simulationSnap.exists() ? simulationSnap.data() : {};
                 const remoteDeck = simulationSnap.exists()
-                    ? buildSlideDeckFromSimulation(simulationSnap.data())
+                    ? buildSlideDeckFromSimulation(remoteData)
                     : buildSlideDeckFromSimulation();
+                const remoteQaItems = normalizeQaResults(remoteData?.qaResults);
                 setSlideDeck(mergeSlideDecks(remoteDeck, localDeck));
+                setQaPanel({
+                    items: remoteQaItems.length > 0 ? remoteQaItems : localQaItems,
+                    loading: false,
+                    error: "",
+                });
             } catch (err) {
                 console.warn("[Analysis] 발표자료 timeline 조회 실패:", err);
                 if (!cancelled) {
                     setSlideDeck({ ...localDeck, loading: false, error: "발표자료를 불러오지 못했습니다." });
+                    setQaPanel({
+                        items: localQaItems,
+                        loading: false,
+                        error: "질의응답 자료를 불러오지 못했습니다.",
+                    });
                 }
             }
         })();
@@ -470,7 +651,6 @@ export default function AnalysisPage() {
 
     const renderedPdfSlideUrl = renderedPdfSlide.key === pdfRenderKey ? renderedPdfSlide.url : "";
     const isRenderingPdfSlide = renderedPdfSlide.key === pdfRenderKey && renderedPdfSlide.loading;
-    const pdfSlideError = renderedPdfSlide.key === pdfRenderKey ? renderedPdfSlide.error : "";
     const hasSyncedMaterial = Boolean(currentSlide && (currentSlideImageUrl || renderedPdfSlideUrl || isRenderingPdfSlide));
 
     const activeItemIds = selectedItemIds.length > 0 ? selectedItemIds : ALL_ITEM_IDS;
@@ -759,20 +939,11 @@ export default function AnalysisPage() {
                                         ) : (
                                             <div className="slide-sync-empty">현재 페이지 렌더링 중...</div>
                                         )
-                                    ) : (
-                                        <div className="slide-sync-empty">발표자료 없음</div>
-                                    )}
-                                </div>
-                                {currentSlide?.content && hasSyncedMaterial && (
-                                    <p className="slide-sync-hint">{currentSlide.content}</p>
+                                ) : (
+                                    <div className="slide-sync-empty">발표자료 없음</div>
                                 )}
-                                {slideDeck.error && !hasSyncedMaterial && (
-                                    <p className="slide-sync-hint">{slideDeck.error}</p>
-                                )}
-                                {pdfSlideError && (
-                                    <p className="slide-sync-hint">{pdfSlideError}</p>
-                                )}
-                            </section>
+                            </div>
+                        </section>
 
                             <div className="summary-lists summary-lists-stack">
                                 <button
@@ -843,6 +1014,20 @@ export default function AnalysisPage() {
                         <button
                             type="button"
                             role="tab"
+                            aria-selected={bottomTab === "qa"}
+                            className={bottomTab === "qa" ? "active" : ""}
+                            onClick={() => setBottomTab("qa")}
+                        >
+                            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 14a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                                <path d="M8 8h8" />
+                                <path d="M8 12h5" />
+                            </svg>
+                            <span>질의응답</span>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
                             aria-selected={bottomTab === "feedback"}
                             className={bottomTab === "feedback" ? "active" : ""}
                             onClick={() => setBottomTab("feedback")}
@@ -902,6 +1087,69 @@ export default function AnalysisPage() {
                                         onRatePointClick={(point) => handleTranscriptClick(point.utterance, point.index)}
                                     />
                                 </div>
+                            </section>
+                        ) : bottomTab === "qa" ? (
+                            <section className="qa-review-section">
+                                <header className="qa-review-header">
+                                    <div>
+                                        <span>시뮬레이션 질의응답</span>
+                                        <h3>질문별 응답 전사와 피드백</h3>
+                                    </div>
+                                    <b>{qaPanel.items.length || 0}/3</b>
+                                </header>
+
+                                {qaPanel.loading ? (
+                                    <div className="qa-empty-state">
+                                        <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                                            <path d="M8 8h8" />
+                                            <path d="M8 12h5" />
+                                        </svg>
+                                        <span>질의응답 자료를 확인 중입니다.</span>
+                                    </div>
+                                ) : qaPanel.items.length > 0 ? (
+                                    <div className="qa-card-grid">
+                                        {qaPanel.items.map((item) => (
+                                            <article key={item.id} className="qa-review-card">
+                                                <header className="qa-card-header">
+                                                    <span className="qa-index">Q{item.index}</span>
+                                                    <div className="qa-card-meta">
+                                                        {item.type && <small>{item.type}</small>}
+                                                        {item.target && <small>청중 {item.target}</small>}
+                                                    </div>
+                                                </header>
+
+                                                <div className="qa-question-block">
+                                                    <span>질문</span>
+                                                    <p>{item.question || "질문 내용이 아직 없습니다."}</p>
+                                                </div>
+
+                                                <div className="qa-answer-block">
+                                                    <span>응답 전사</span>
+                                                    <p className={item.answerTranscript ? "" : "qa-placeholder"}>
+                                                        {item.answerTranscript || "응답 전사 자료가 아직 없습니다."}
+                                                    </p>
+                                                </div>
+
+                                                <div className="qa-feedback-block">
+                                                    <span>AI 피드백</span>
+                                                    <p className={item.aiFeedback ? "" : "qa-placeholder"}>
+                                                        {item.aiFeedback || "AI 피드백은 아직 생성되지 않았습니다."}
+                                                    </p>
+                                                </div>
+                                            </article>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="qa-empty-state">
+                                        <svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M21 14a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                                            <path d="M8 8h8" />
+                                            <path d="M8 12h5" />
+                                        </svg>
+                                        <span>{qaPanel.error || "저장된 질의응답 자료가 아직 없습니다."}</span>
+                                    </div>
+                                )}
                             </section>
                         ) : (
                     <section className="detailed-feedback-section feedback-demo-section">
@@ -1073,7 +1321,13 @@ export default function AnalysisPage() {
             <div className={`reflection-chat-panel ${isChatOpen ? "open" : ""}`}>
                 <div className="chat-panel-header">
                     <div className="chat-panel-title">
-                        <span className="chat-icon">🤔</span>
+                        <span className="chat-icon" aria-hidden="true">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                <path d="M8 9h8" />
+                                <path d="M8 13h5" />
+                            </svg>
+                        </span>
                         <h3>AI 발표 성찰 대화</h3>
                         <button type="button" className="chat-panel-close" onClick={() => setIsChatOpen(false)} aria-label="AI 성찰 닫기">×</button>
                     </div>
@@ -1083,7 +1337,17 @@ export default function AnalysisPage() {
                 <div className="chat-messages">
                     {chatMessages.map((msg, idx) => (
                         <div key={idx} className={`chat-message ${msg.role}`}>
-                            {msg.role === "assistant" && (<div className="message-avatar">🤖</div>)}
+                            {msg.role === "assistant" && (
+                                <div className="message-avatar" aria-hidden="true">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="5" y="7" width="14" height="12" rx="2" />
+                                        <path d="M12 3v4" />
+                                        <path d="M9 12h.01" />
+                                        <path d="M15 12h.01" />
+                                        <path d="M9 16h6" />
+                                    </svg>
+                                </div>
+                            )}
                             <div className="message-content markdown-content">
                                 <ReactMarkdown>{msg.content}</ReactMarkdown>
                             </div>
@@ -1091,7 +1355,15 @@ export default function AnalysisPage() {
                     ))}
                     {isChatLoading && (
                         <div className="chat-message assistant">
-                            <div className="message-avatar">🤖</div>
+                            <div className="message-avatar" aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <rect x="5" y="7" width="14" height="12" rx="2" />
+                                    <path d="M12 3v4" />
+                                    <path d="M9 12h.01" />
+                                    <path d="M15 12h.01" />
+                                    <path d="M9 16h6" />
+                                </svg>
+                            </div>
                             <div className="message-content loading">
                                 <div className="typing-indicator"><span></span><span></span><span></span></div>
                             </div>
@@ -1102,7 +1374,14 @@ export default function AnalysisPage() {
 
                 {chatMessages.length <= 1 && (
                     <div className="chat-suggestions">
-                        <p className="chat-suggestions-label">💡 이런 질문을 해보세요</p>
+                        <p className="chat-suggestions-label">
+                            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 18h6" />
+                                <path d="M10 22h4" />
+                                <path d="M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2Z" />
+                            </svg>
+                            <span>이런 질문을 해보세요</span>
+                        </p>
                         <div className="chat-suggestion-buttons">
                             <button type="button" className="chat-suggestion-btn" onClick={() => setChatInput("이번 발표에서 가장 개선되어야 할 부분이 뭘까?")}>
                                 이번 발표에서 가장 개선되어야 할 부분이 뭘까?
