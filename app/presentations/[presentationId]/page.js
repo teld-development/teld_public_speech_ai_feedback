@@ -819,7 +819,7 @@ export default function PresentationDetailPage({ params }) {
             }, { merge: true });
 
             try {
-                const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://xr-zihe.onrender.com";
+                const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://34.158.198.43:8000";
                 const backendRes = await fetch(`${backendUrl}/session/create`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },

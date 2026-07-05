@@ -27,11 +27,9 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // ★ 로그인 페이지 진입 시 Render 백엔드 미리 깨우기
-  //   Render 무료 티어는 15분 무사용 시 슬립. 사용자가 로그인 → 청중 설정 → 시뮬레이션 시작
-  //   까지 보통 30~60초 걸리므로, 그 사이에 ping 보내두면 Unity 진입 시점엔 이미 깨어있음
+  // 로그인 페이지 진입 시 백엔드 상태 확인
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://xr-zihe.onrender.com";
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://34.158.198.43:8000";
     // 결과 무시 (실패해도 사용자 흐름엔 영향 X)
     fetch(`${backendUrl}/ping`, { method: "GET", cache: "no-store" })
       .then((r) => console.log(`[Login] 백엔드 ping 응답: ${r.status}`))

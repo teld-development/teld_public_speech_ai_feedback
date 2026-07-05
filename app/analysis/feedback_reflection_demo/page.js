@@ -8,10 +8,11 @@ const DEMO_FEEDBACK_CATEGORIES = [
         id: "content",
         label: "내용",
         shortLabel: "내용",
-        icon: "📘",
+        icon: "book",
+        desc: "발표 주제와 청중에 맞는 정보 선택과 설명을 점검합니다.",
         items: [
-            { id: "content_suitability", label: "내용 적합성", desc: "발표 목적과 주제에 맞는 내용을 선정하였다." },
-            { id: "audience_consideration", label: "청중 고려", desc: "청중의 수준과 특성을 고려하였다." },
+            { id: "content_suitability", label: "내용적합성", desc: "발표 목적과 주제에 맞는 내용을 선정하였다." },
+            { id: "audience_consideration", label: "청중고려", desc: "청중의 수준과 특성을 고려하였다." },
             { id: "example_use", label: "사례 활용", desc: "설명하는 내용과 관련된 적절한 사례나 예시를 제시하였다." },
             { id: "explanation_specificity", label: "설명의 구체성", desc: "예상 청중이 이해하기 쉽게 내용을 구체적으로 설명하였다." },
         ],
@@ -20,8 +21,10 @@ const DEMO_FEEDBACK_CATEGORIES = [
         id: "organization",
         label: "조직",
         shortLabel: "조직",
-        icon: "🧭",
+        icon: "target",
+        desc: "발표 내용이 어떤 순서와 관계로 배열되었는지 점검합니다.",
         items: [
+            { id: "organization_explanation_specificity", label: "설명의 구체성", desc: "각 부분의 설명이 조직 안에서 충분히 구체적으로 제시되었다." },
             { id: "structure_completeness", label: "구조의 완결성", desc: "도입-전개-마무리의 구조를 갖추어 내용을 조직하였다." },
             { id: "content_connectivity", label: "내용의 연결성", desc: "단락과 단락이 유기적으로 연결되었다." },
             { id: "organization_method", label: "구성 방식의 적절성", desc: "설명 대상에 적절한 방식으로 내용을 구성하였다." },
@@ -31,7 +34,8 @@ const DEMO_FEEDBACK_CATEGORIES = [
         id: "expression_delivery",
         label: "표현 및 전달",
         shortLabel: "표현",
-        icon: "🎙️",
+        icon: "mic",
+        desc: "말하기 표현, 음성, 비언어적 전달 방식을 점검합니다.",
         items: [
             { id: "vocabulary_appropriateness", label: "어휘의 적절성", desc: "발표 상황에 적절한 어휘를 선택하여 말하였다." },
             { id: "grammar_accuracy", label: "어법의 정확성", desc: "어법에 맞게 말하였다." },
@@ -70,6 +74,15 @@ const DUMMY_FEEDBACK = {
             "생성 결과 검토, 저작권 같은 개념은 청중 수준에 맞춘 간단한 예시가 더 필요했습니다.",
         ],
         suggestion: "전문 용어를 말한 뒤 바로 쉬운 예시를 하나 붙여 청중의 이해를 도와보세요.",
+    },
+    organization_explanation_specificity: {
+        score: 3,
+        summary: "조직 안에서 주요 내용은 차례로 제시되었지만, 각 부분의 설명이 왜 그 순서로 이어지는지 더 구체적으로 드러낼 필요가 있습니다.",
+        evidence: [
+            "활용 사례, 피드백 자동화, 주의점이 순서대로 제시되어 큰 흐름은 확인되었습니다.",
+            "각 부분이 앞 내용과 어떻게 이어지는지 설명하는 연결 문장이 더해지면 조직의 설득력이 높아집니다.",
+        ],
+        suggestion: "새 항목으로 넘어갈 때 '이 부분은 앞서 말한 사례와 연결됩니다'처럼 순서의 이유를 짧게 밝혀보세요.",
     },
     structure_completeness: {
         score: 3,
@@ -281,7 +294,7 @@ const DUMMY_QA_FEEDBACK = [
     {
         question: "AI가 교사를 대체할 수 있다고 보나요?",
         answer: "아니요. AI는 수업을 대신하기보다는 교사의 판단을 도와주는 도구로 활용되어야 한다고 생각합니다.",
-        score: 5,
+        score: 4,
         strength: "입장을 먼저 밝힌 뒤 발표의 결론과 연결해 매우 안정적으로 답했습니다.",
         improve: "답변 자체는 좋습니다. 여기에 '왜냐하면 학생 맥락을 판단하는 일은 교사의 역할이기 때문입니다'를 붙이면 더 완결된 답이 됩니다.",
     },
@@ -341,6 +354,62 @@ function getRubricTone(score) {
     return "good";
 }
 
+function renderDemoCategoryIcon(icon) {
+    const commonProps = {
+        width: 22,
+        height: 22,
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 2,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        "aria-hidden": "true",
+    };
+
+    if (icon === "target") {
+        return (
+            <svg {...commonProps}>
+                <circle cx="12" cy="12" r="9" />
+                <circle cx="12" cy="12" r="5" />
+                <circle cx="12" cy="12" r="1" />
+            </svg>
+        );
+    }
+
+    if (icon === "mic") {
+        return (
+            <svg {...commonProps}>
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <path d="M12 19v3" />
+                <path d="M8 22h8" />
+            </svg>
+        );
+    }
+
+    return (
+        <svg {...commonProps}>
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" />
+        </svg>
+    );
+}
+
+function getDemoCategoryStats(category) {
+    const scores = category.items.map((item, index) => {
+        const feedback = DUMMY_FEEDBACK[item.id] || buildDemoFeedback(item, category, index);
+        return feedback.score;
+    });
+    const average = scores.reduce((sum, score) => sum + score, 0) / Math.max(scores.length, 1);
+
+    return {
+        average: average.toFixed(1),
+        count: scores.length,
+        tone: getRubricTone(average),
+    };
+}
+
 function getStepIndex(stepId) {
     return FLOW_STEPS.findIndex((step) => step.id === stepId);
 }
@@ -373,6 +442,7 @@ export default function FeedbackReflectionDemoPage() {
     const activeStepIndex = getStepIndex(activeStep);
     const selectedRubricItem = DEMO_RUBRIC_ITEMS.find((item) => item.id === selectedRubricItemId) || DEMO_RUBRIC_ITEMS[0];
     const selectedRubricCategory = DEMO_FEEDBACK_CATEGORIES.find((category) => category.id === selectedRubricItem?.categoryId) || DEMO_FEEDBACK_CATEGORIES[0];
+    const selectedRubricCategoryStats = getDemoCategoryStats(selectedRubricCategory);
     const selectedRubricFeedback = selectedRubricItem
         ? DUMMY_FEEDBACK[selectedRubricItem.id] || buildDemoFeedback(selectedRubricItem, selectedRubricCategory, selectedRubricItem.itemIndex)
         : null;
@@ -444,7 +514,7 @@ export default function FeedbackReflectionDemoPage() {
         return (
             <div className="feedback-reflection-demo-stars" aria-label="총괄 자기평가 점수">
                 <div className="feedback-reflection-demo-star-row">
-                    {[1, 2, 3, 4, 5].map((star) => {
+                    {[1, 2, 3, 4].map((star) => {
                         const state = selfScore >= star ? "filled" : selfScore >= star - 0.5 ? "half" : "";
                         const nextScore = selfScore === star
                             ? star - 0.5
@@ -478,7 +548,7 @@ export default function FeedbackReflectionDemoPage() {
 
                 <article className="feedback-reflection-demo-score-panel">
                     <span className="feedback-reflection-demo-kicker">총괄 자기평가</span>
-                    <strong>{selfScore.toFixed(1)} / 5.0</strong>
+                    <strong>{selfScore.toFixed(1)} / 4.0</strong>
                     {renderSelfScoreStars()}
                 </article>
 
@@ -832,59 +902,98 @@ export default function FeedbackReflectionDemoPage() {
                             </section>
                         ) : (
                             <section className="detailed-feedback-section feedback-demo-section">
-                                <div className="feedback-reflection-demo-rubric-picker" aria-label="피드백 중영역">
-                                    {DEMO_RUBRIC_ITEMS.map((item) => {
-                                        const category = DEMO_FEEDBACK_CATEGORIES.find((candidate) => candidate.id === item.categoryId) || DEMO_FEEDBACK_CATEGORIES[0];
-                                        const feedback = DUMMY_FEEDBACK[item.id] || buildDemoFeedback(item, category, item.itemIndex);
-                                        const tone = getRubricTone(feedback.score);
-                                        const isSelected = selectedRubricItem?.id === item.id;
+                                <div className="feedback-reflection-demo-rubric-browser">
+                                    <div className="feedback-reflection-demo-area-tabs" role="tablist" aria-label="피드백 대영역">
+                                        {DEMO_FEEDBACK_CATEGORIES.map((category) => {
+                                            const stats = getDemoCategoryStats(category);
+                                            const isActive = selectedRubricCategory?.id === category.id;
+                                            const firstItem = category.items[0];
 
-                                        return (
-                                            <button
-                                                key={item.id}
-                                                type="button"
-                                                className={`feedback-reflection-demo-rubric-button ${tone} ${isSelected ? "active" : ""}`}
-                                                onClick={() => setSelectedRubricItemId(item.id)}
-                                                aria-pressed={isSelected}
-                                            >
-                                                <span>{item.label}</span>
-                                                <strong>{feedback.score}/5</strong>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                            return (
+                                                <button
+                                                    key={category.id}
+                                                    type="button"
+                                                    role="tab"
+                                                    aria-selected={isActive}
+                                                    className={`feedback-reflection-demo-area-tab ${stats.tone} ${isActive ? "active" : ""}`}
+                                                    onClick={() => firstItem && setSelectedRubricItemId(firstItem.id)}
+                                                    data-tooltip={category.desc}
+                                                >
+                                                    <span className="feedback-reflection-demo-area-tab-icon">{renderDemoCategoryIcon(category.icon)}</span>
+                                                    <span>
+                                                        <strong>{category.label}</strong>
+                                                        <small>평균 {stats.average}/4</small>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
 
-                                {selectedRubricItem && selectedRubricFeedback && (
-                                    <article className={`feedback-reflection-demo-rubric-detail ${selectedRubricTone}`}>
-                                        <header>
+                                    <div className={`feedback-reflection-demo-subrubric-panel ${selectedRubricTone}`}>
+                                        <header className="feedback-reflection-demo-subrubric-header">
                                             <div>
-                                                <span>{selectedRubricItem.categoryLabel}</span>
-                                                <h3>{selectedRubricItem.label}</h3>
-                                                <p>{selectedRubricItem.desc}</p>
+                                                <span>대영역</span>
+                                                <h3>{selectedRubricCategory.label}</h3>
                                             </div>
-                                            <div className={`feedback-reflection-demo-rubric-score ${selectedRubricTone}`}>
-                                                <strong>{selectedRubricFeedback.score}</strong>
-                                                <span>/5</span>
-                                            </div>
+                                            <p>{selectedRubricCategory.desc}</p>
+                                            <strong>{selectedRubricCategoryStats.average}/4</strong>
                                         </header>
 
-                                        <div className="feedback-demo-suggestion feedback-reflection-demo-rubric-top-suggestion">
-                                            <strong>개선 제안</strong>
-                                            <p>{selectedRubricFeedback.suggestion}</p>
+                                        <div className="feedback-reflection-demo-subrubric-label">세부 기준</div>
+                                        <div className="feedback-reflection-demo-rubric-picker" aria-label={`${selectedRubricCategory.label} 하위 피드백 기준`}>
+                                            {selectedRubricCategory.items.map((item, index) => {
+                                                const feedback = DUMMY_FEEDBACK[item.id] || buildDemoFeedback(item, selectedRubricCategory, index);
+                                                const tone = getRubricTone(feedback.score);
+                                                const isSelected = selectedRubricItem?.id === item.id;
+
+                                                return (
+                                                    <button
+                                                        key={item.id}
+                                                        type="button"
+                                                        className={`feedback-reflection-demo-rubric-button ${tone} ${isSelected ? "active" : ""}`}
+                                                        onClick={() => setSelectedRubricItemId(item.id)}
+                                                        aria-pressed={isSelected}
+                                                    >
+                                                        <span>{item.label}</span>
+                                                        <strong>{feedback.score}/4</strong>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
 
-                                        <div className="feedback-reflection-demo-rubric-grid">
-                                            <div className="feedback-reflection-demo-timestamp-strip">
-                                                {selectedRubricEvidence.map((text, index) => (
-                                                    <div key={index} className="timestamp-card-mini">
-                                                        <span className="time-badge-mini">{RUBRIC_EVIDENCE_TIMES[index % RUBRIC_EVIDENCE_TIMES.length]}</span>
-                                                        <p className="timestamp-feedback-mini">{text}</p>
+                                        {selectedRubricItem && selectedRubricFeedback && (
+                                            <article className={`feedback-reflection-demo-rubric-detail connected ${selectedRubricTone}`}>
+                                                <header>
+                                                    <div>
+                                                        <span>{selectedRubricItem.categoryLabel} &gt; {selectedRubricItem.label}</span>
+                                                        <h3>{selectedRubricItem.label}</h3>
+                                                        <p>{selectedRubricItem.desc}</p>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </article>
-                                )}
+                                                    <div className={`feedback-reflection-demo-rubric-score ${selectedRubricTone}`}>
+                                                        <strong>{selectedRubricFeedback.score}</strong>
+                                                        <span>/4</span>
+                                                    </div>
+                                                </header>
+
+                                                <div className="feedback-demo-suggestion feedback-reflection-demo-rubric-top-suggestion">
+                                                    <strong>개선 제안</strong>
+                                                    <p>{selectedRubricFeedback.suggestion}</p>
+                                                </div>
+
+                                                <div className="feedback-reflection-demo-rubric-grid">
+                                                    <div className="feedback-reflection-demo-timestamp-strip">
+                                                        {selectedRubricEvidence.map((text, index) => (
+                                                            <div key={index} className="timestamp-card-mini">
+                                                                <span className="time-badge-mini">{RUBRIC_EVIDENCE_TIMES[index % RUBRIC_EVIDENCE_TIMES.length]}</span>
+                                                                <p className="timestamp-feedback-mini">{text}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </article>
+                                        )}
+                                    </div>
+                                </div>
                             </section>
                         )}
                     </div>
@@ -979,7 +1088,7 @@ export default function FeedbackReflectionDemoPage() {
                     <section className="reflection-note-modal feedback-reflection-demo-note-modal" role="dialog" aria-modal="true" aria-labelledby="reflection-note-modal-title">
                         <header className="reflection-note-modal-header">
                             <div>
-                                <span>자기평가 {selfScore.toFixed(1)} / 5.0</span>
+                                <span>자기평가 {selfScore.toFixed(1)} / 4.0</span>
                                 <h2 id="reflection-note-modal-title">성찰 노트</h2>
                                 <p>1단계에서 작성한 자기평가와 성찰 내용입니다.</p>
                             </div>
@@ -990,7 +1099,7 @@ export default function FeedbackReflectionDemoPage() {
                             <section className="reflection-note-score-panel" aria-label="성찰 노트 자기평가 점수">
                                 <div>
                                     <span>오늘 발표 자기평가</span>
-                                    <strong>{selfScore.toFixed(1)} / 5.0</strong>
+                                    <strong>{selfScore.toFixed(1)} / 4.0</strong>
                                 </div>
                                 {renderSelfScoreStars()}
                             </section>

@@ -328,7 +328,7 @@ function SimulationSetupPageContent() {
             //    a) ping 으로 미리 깨움 (최대 60초 대기)
             //    b) /session/create 호출 (실패 시 최대 3회 재시도)
             //    c) 모두 실패하면 사용자에게 명확히 안내 (silent fallback 안 함)
-            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://xr-zihe.onrender.com";
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://34.158.198.43:8000";
 
             // a) 서버 깨우기 — ping (cold start 시 30~60초 걸림)
             try {

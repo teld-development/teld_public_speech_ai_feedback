@@ -8,6 +8,7 @@ import { db } from "../lib/firebase";
 import { useAuth } from "../lib/AuthProvider";
 import { FEEDBACK_CATEGORIES, ALL_ITEM_IDS } from "../lib/feedbackAreas";
 import PresentationDataVisuals from "../components/PresentationDataVisuals";
+import { engineErrorMessage, engineUrl } from "../lib/engineApi";
 
 const PDFJS_VERSION = "4.10.38";
 
@@ -363,7 +364,7 @@ function mergeSlideDecks(primary, fallback) {
 }
 
 async function loadPdfDocument(pdfjsLib, sourceUrl) {
-    const proxyResponse = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(sourceUrl)}`, {
+    const proxyResponse = await fetch(engineUrl(`/pdf-proxy?url=${encodeURIComponent(sourceUrl)}`), {
         cache: "force-cache",
     });
 
@@ -711,7 +712,7 @@ export default function AnalysisPage() {
         setIsChatLoading(true);
 
         try {
-            const response = await fetch("/api/chat", {
+            const response = await fetch(engineUrl("/chat"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -721,7 +722,7 @@ export default function AnalysisPage() {
                 })
             });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || "응답 생성 실패");
+            if (!response.ok) throw new Error(engineErrorMessage(data, "응답 생성 실패"));
             setChatMessages((prev) => [...prev, { role: "assistant", content: data.response }]);
         } catch (err) {
             console.error("Chat error:", err);
