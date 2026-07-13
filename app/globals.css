@@ -5443,8 +5443,13 @@ a {
 }
 
 .feedback-area-desc {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
   font-size: 12px;
   color: #64748b;
+  text-align: left;
+  word-break: keep-all;
 }
 
 .feedback-area-count {
@@ -5462,6 +5467,41 @@ a {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.feedback-area-nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.feedback-area-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.feedback-area-nav-button:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+  transform: translateY(-1px);
+}
+
+.feedback-area-nav-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 /* 점수 뱃지 */
@@ -12976,7 +13016,17 @@ a {
   font-size: 16px;
 }
 
+.feedback-demo-active-header .feedback-area-desc {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+
 .feedback-demo-active-header .score-badge {
+  margin-top: 4px;
+}
+
+.feedback-demo-active-header .feedback-area-header-right {
   margin-top: 4px;
 }
 

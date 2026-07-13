@@ -17,6 +17,15 @@ function buildInitialSelections(activeItemIds = ALL_ITEM_IDS) {
     }, {});
 }
 
+function getNextCategoryItemId(category, currentItemId, direction = 1) {
+    const items = category?.items || [];
+    if (items.length === 0) return "";
+
+    const currentIndex = Math.max(0, items.findIndex((item) => item.id === currentItemId));
+    const nextIndex = (currentIndex + direction + items.length) % items.length;
+    return items[nextIndex]?.id || items[0]?.id || "";
+}
+
 const REFLECTION_STEPS = [
     {
         id: "keep",
@@ -828,17 +837,45 @@ export default function AnalysisPage() {
                                                 <div className="feedback-area-header feedback-demo-active-header">
                                                     <div className="feedback-area-title">
                                                         <h4>{selectedItem.label}</h4>
-                                                        <span className="feedback-area-desc">{selectedItem.desc}</span>
                                                     </div>
-                                                    {score != null && (
-                                                        <div className="score-badge" data-score={score} title={`${score}/5점`}>
-                                                            {[1, 2, 3, 4, 5].map((n) => (
-                                                                <span key={n} className={`score-dot ${n <= score ? "filled" : ""}`} />
-                                                            ))}
-                                                            <span className="score-value">{score}<span className="score-max">/5</span></span>
-                                                        </div>
-                                                    )}
+                                                    <div className="feedback-area-header-right">
+                                                        {score != null && (
+                                                            <div className="score-badge" data-score={score} title={`${score}/5점`}>
+                                                                {[1, 2, 3, 4, 5].map((n) => (
+                                                                    <span key={n} className={`score-dot ${n <= score ? "filled" : ""}`} />
+                                                                ))}
+                                                                <span className="score-value">{score}<span className="score-max">/5</span></span>
+                                                            </div>
+                                                        )}
+                                                        {cat.items.length > 1 && (
+                                                            <div className="feedback-area-nav-buttons" aria-label={`${cat.label} 하위 영역 이동`}>
+                                                                <button
+                                                                    type="button"
+                                                                    className="feedback-area-nav-button"
+                                                                    aria-label={`${cat.label} 이전 하위 영역`}
+                                                                    onClick={() => setSelectedByCategory((prev) => ({
+                                                                        ...prev,
+                                                                        [cat.id]: getNextCategoryItemId(cat, selectedItem.id, -1),
+                                                                    }))}
+                                                                >
+                                                                    <span aria-hidden="true">‹</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="feedback-area-nav-button"
+                                                                    aria-label={`${cat.label} 다음 하위 영역`}
+                                                                    onClick={() => setSelectedByCategory((prev) => ({
+                                                                        ...prev,
+                                                                        [cat.id]: getNextCategoryItemId(cat, selectedItem.id, 1),
+                                                                    }))}
+                                                                >
+                                                                    <span aria-hidden="true">›</span>
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
+                                                <div className="feedback-area-desc">{selectedItem.desc}</div>
 
                                                 <div className="timestamp-card-mini feedback-demo-summary">
                                                     <span className="time-badge-mini">요약</span>

@@ -109,6 +109,15 @@ function parseDemoTimeToSeconds(time) {
     return (Number.isFinite(mins) ? mins : 0) * 60 + (Number.isFinite(secs) ? secs : 0);
 }
 
+function getNextCategoryItemId(category, currentItemId, direction = 1) {
+    const items = category?.items || [];
+    if (items.length === 0) return "";
+
+    const currentIndex = Math.max(0, items.findIndex((item) => item.id === currentItemId));
+    const nextIndex = (currentIndex + direction + items.length) % items.length;
+    return items[nextIndex]?.id || items[0]?.id || "";
+}
+
 function buildDemoFeedback(item, category, index = 0) {
     const baseScore = 3 + (index % 3 === 0 ? 1 : 0);
     return {
@@ -377,15 +386,43 @@ export default function FeedbackDemoPage() {
                                             <div className="feedback-area-header feedback-demo-active-header">
                                                 <div className="feedback-area-title">
                                                     <h4>{selectedItem.label}</h4>
-                                                    <span className="feedback-area-desc">{selectedItem.desc}</span>
                                                 </div>
-                                                <div className="score-badge" data-score={feedback.score} title={`${feedback.score}/5점`}>
-                                                    {[1, 2, 3, 4, 5].map((score) => (
-                                                        <span key={score} className={`score-dot ${score <= feedback.score ? "filled" : ""}`} />
-                                                    ))}
-                                                    <span className="score-value">{feedback.score}<span className="score-max">/5</span></span>
+                                                <div className="feedback-area-header-right">
+                                                    <div className="score-badge" data-score={feedback.score} title={`${feedback.score}/5점`}>
+                                                        {[1, 2, 3, 4, 5].map((score) => (
+                                                            <span key={score} className={`score-dot ${score <= feedback.score ? "filled" : ""}`} />
+                                                        ))}
+                                                        <span className="score-value">{feedback.score}<span className="score-max">/5</span></span>
+                                                    </div>
+                                                    {category.items.length > 1 && (
+                                                        <div className="feedback-area-nav-buttons" aria-label={`${category.label} 하위 영역 이동`}>
+                                                            <button
+                                                                type="button"
+                                                                className="feedback-area-nav-button"
+                                                                aria-label={`${category.label} 이전 하위 영역`}
+                                                                onClick={() => setSelectedByCategory((prev) => ({
+                                                                    ...prev,
+                                                                    [category.id]: getNextCategoryItemId(category, selectedItem.id, -1),
+                                                                }))}
+                                                            >
+                                                                <span aria-hidden="true">‹</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="feedback-area-nav-button"
+                                                                aria-label={`${category.label} 다음 하위 영역`}
+                                                                onClick={() => setSelectedByCategory((prev) => ({
+                                                                    ...prev,
+                                                                    [category.id]: getNextCategoryItemId(category, selectedItem.id, 1),
+                                                                }))}
+                                                            >
+                                                                <span aria-hidden="true">›</span>
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
+                                            <div className="feedback-area-desc">{selectedItem.desc}</div>
 
                                             <div className="timestamp-card-mini feedback-demo-summary">
                                                 <span className="time-badge-mini">요약</span>
