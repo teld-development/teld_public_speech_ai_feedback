@@ -68,6 +68,13 @@ async function getAttemptAnalysisResult(user, presentationId, attemptId) {
     return extractAnalysisResult(attempt);
 }
 
+async function getAttemptData(user, presentationId, attemptId) {
+    if (!user?.uid || !presentationId || !attemptId) return null;
+    const attemptRef = doc(db, "users", user.uid, "presentations", presentationId, "attempts", attemptId);
+    const attemptSnap = await getDoc(attemptRef);
+    return attemptSnap.exists() ? attemptSnap.data() : null;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isAnalysisResult(value) {
@@ -107,10 +114,24 @@ async function resolveStorageFunctionAnalysis(user, presentationId, attemptId, i
 
         onPending?.(payload, pollCount);
         await sleep(ANALYSIS_POLL_INTERVAL_MS);
-        payload = await postEngineJson("/resumePresentationAnalysis", { presentationId, attemptId }, {
-            user,
-            fallbackMessage: "분석 이어받기에 실패했습니다.",
-        });
+        try {
+            payload = await postEngineJson("/resumePresentationAnalysis", { presentationId, attemptId }, {
+                user,
+                fallbackMessage: "분석 이어받기에 실패했습니다.",
+            });
+        } catch (err) {
+            const attempt = await getAttemptData(user, presentationId, attemptId);
+            if (attempt?.status === "completed") {
+                const result = extractAnalysisResult(attempt);
+                if (result) return result;
+            }
+            if (attempt?.status === "analyzing") {
+                payload = { pending: true, stage: attempt.analysisStage || "analyzing", retrying: true };
+                pollCount += 1;
+                continue;
+            }
+            throw err;
+        }
         pollCount += 1;
     }
 

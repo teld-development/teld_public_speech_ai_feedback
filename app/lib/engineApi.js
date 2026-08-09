@@ -3,7 +3,7 @@ import { readJsonResponse } from "./httpResponse";
 export const ENGINE_API_BASE = (
     process.env.NEXT_PUBLIC_AI_API_BASE_URL ||
     process.env.NEXT_PUBLIC_BACKEND_URL ||
-    "http://34.158.198.43:8000"
+    "https://34.158.198.43.sslip.io"
 ).replace(/\/+$/, "");
 
 export function engineUrl(path) {

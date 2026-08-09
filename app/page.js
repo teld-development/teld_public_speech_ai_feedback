@@ -29,7 +29,7 @@ export default function LoginPage() {
 
   // 로그인 페이지 진입 시 백엔드 상태 확인
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://34.158.198.43:8000";
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://34.158.198.43.sslip.io";
     // 결과 무시 (실패해도 사용자 흐름엔 영향 X)
     fetch(`${backendUrl}/ping`, { method: "GET", cache: "no-store" })
       .then((r) => console.log(`[Login] 백엔드 ping 응답: ${r.status}`))
