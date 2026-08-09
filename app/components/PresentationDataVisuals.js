@@ -1,10 +1,13 @@
 "use client";
 
-function countSpeechUnits(text) {
-    return String(text || "")
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean).length;
+import { useMemo } from "react";
+
+const STANDARD_SYLLABLES_PER_MINUTE_MIN = 210;
+const STANDARD_SYLLABLES_PER_MINUTE_MAX = 270;
+const STANDARD_SYLLABLES_PER_MINUTE_CENTER = 240;
+
+function countKoreanSyllables(text) {
+    return String(text || "").match(/[가-힣]/g)?.length || 0;
 }
 
 function formatClock(seconds) {
@@ -25,7 +28,7 @@ function formatDurationLabel(seconds) {
 }
 
 function buildSpeechRateSeries(utterances = []) {
-    return utterances
+    const segments = utterances
         .map((utterance, index) => {
             const startSec = Number(utterance.startSec ?? utterance.seconds ?? 0);
             const fallbackEndSec = Number(utterance.endSec ?? startSec);
@@ -33,20 +36,64 @@ function buildSpeechRateSeries(utterances = []) {
                 ? fallbackEndSec
                 : startSec + 1;
             const durationSec = Math.max(1, endSec - startSec);
-            const units = countSpeechUnits(utterance.text);
-            const wpm = units > 0 ? Math.round(units / (durationSec / 60)) : 0;
+            const syllables = countKoreanSyllables(utterance.text);
 
             return {
                 index,
                 utterance,
                 startSec,
                 endSec,
-                timeSec: startSec + durationSec / 2,
-                units,
-                wpm,
+                durationSec,
+                syllables,
             };
         })
-        .filter((point) => point.units > 0 && Number.isFinite(point.wpm));
+        .filter((segment) => segment.syllables > 0 && Number.isFinite(segment.startSec) && Number.isFinite(segment.endSec));
+
+    if (!segments.length) return [];
+
+    const maxTime = Math.max(...segments.map((segment) => segment.endSec));
+    const minuteCount = Math.max(1, Math.ceil(maxTime / 60));
+
+    return Array.from({ length: minuteCount }, (_, index) => {
+        const startSec = index * 60;
+        const endSec = Math.min(startSec + 60, maxTime);
+        const durationSec = Math.max(1, endSec - startSec);
+        const overlappingSegments = segments.filter((segment) => segment.endSec > startSec && segment.startSec < endSec);
+        const syllables = overlappingSegments.reduce((total, segment) => {
+            const overlapStart = Math.max(startSec, segment.startSec);
+            const overlapEnd = Math.min(endSec, segment.endSec);
+            const overlapRatio = Math.max(0, overlapEnd - overlapStart) / segment.durationSec;
+            return total + segment.syllables * overlapRatio;
+        }, 0);
+        const representative = overlappingSegments[0] || segments[0];
+
+        return {
+            index,
+            utterance: representative.utterance,
+            startSec,
+            endSec,
+            durationSec,
+            timeSec: startSec + durationSec / 2,
+            syllables,
+            syllablesPerMinute: Math.round(syllables / (durationSec / 60)),
+        };
+    });
+}
+
+function getSpeechRateDeviation(rate) {
+    if (rate < STANDARD_SYLLABLES_PER_MINUTE_MIN) {
+        return {
+            tone: "slow",
+            label: `${STANDARD_SYLLABLES_PER_MINUTE_MIN - rate}음절/분 느림`,
+        };
+    }
+    if (rate > STANDARD_SYLLABLES_PER_MINUTE_MAX) {
+        return {
+            tone: "fast",
+            label: `${rate - STANDARD_SYLLABLES_PER_MINUTE_MAX}음절/분 빠름`,
+        };
+    }
+    return { tone: "good", label: "권장 범위 내" };
 }
 
 function buildSmoothPath(coords) {
@@ -96,22 +143,40 @@ function SpeechRateChart({ series, onPointClick }) {
     const height = 210;
     const padding = { top: 16, right: 20, bottom: 34, left: 42 };
     const maxTime = Math.max(...series.map((point) => point.endSec), 1);
-    const maxWpm = Math.max(180, Math.ceil(Math.max(...series.map((point) => point.wpm)) / 20) * 20);
-    const minWpm = 0;
+    const observedRates = series.map((point) => point.syllablesPerMinute);
+    const observedMinRate = Math.min(...observedRates);
+    const observedMaxRate = Math.max(...observedRates);
+    const minRate = Math.max(
+        0,
+        Math.floor((Math.min(observedMinRate, STANDARD_SYLLABLES_PER_MINUTE_MIN) - 30) / 30) * 30
+    );
+    const maxRate = Math.max(
+        minRate + 120,
+        Math.ceil((Math.max(observedMaxRate, STANDARD_SYLLABLES_PER_MINUTE_MAX) + 30) / 30) * 30
+    );
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const xFor = (seconds) => padding.left + (Math.max(0, seconds) / maxTime) * plotWidth;
-    const yFor = (wpm) => padding.top + (1 - (Math.max(minWpm, wpm) - minWpm) / (maxWpm - minWpm)) * plotHeight;
+    const yFor = (rate) => {
+        const boundedRate = Math.min(maxRate, Math.max(minRate, rate));
+        return padding.top + (1 - (boundedRate - minRate) / (maxRate - minRate)) * plotHeight;
+    };
     const coords = series.map((point) => ({
         x: xFor(point.timeSec),
-        y: yFor(point.wpm),
+        y: yFor(point.syllablesPerMinute),
     }));
     const linePath = buildSmoothPath(coords);
-    const averageWpm = Math.round(
-        series.reduce((sum, point) => sum + point.units, 0)
-        / (Math.max(1, series.reduce((sum, point) => sum + (point.endSec - point.startSec), 0)) / 60)
+    const averageRate = Math.round(
+        series.reduce((sum, point) => sum + point.syllables, 0)
+        / (Math.max(1, series.reduce((sum, point) => sum + point.durationSec, 0)) / 60)
     );
-    const yTicks = [0, Math.round(maxWpm / 2), maxWpm];
+    const deviation = getSpeechRateDeviation(averageRate);
+    const yTicks = [...new Set([
+        minRate,
+        STANDARD_SYLLABLES_PER_MINUTE_MIN,
+        STANDARD_SYLLABLES_PER_MINUTE_MAX,
+        maxRate,
+    ])].sort((a, b) => a - b);
     const xTicks = [0, maxTime / 2, maxTime];
 
     return (
@@ -119,16 +184,27 @@ function SpeechRateChart({ series, onPointClick }) {
             <div className="presentation-data-metric-row">
                 <div>
                     <span>평균 말 빠르기</span>
-                    <strong>{averageWpm} 어절/분</strong>
+                    <strong>{averageRate} 음절/분</strong>
                 </div>
                 <div>
-                    <span>최고 구간</span>
-                    <strong>{Math.max(...series.map((point) => point.wpm))} 어절/분</strong>
+                    <span>권장 범위</span>
+                    <strong>210~270 음절/분</strong>
+                </div>
+                <div className={`speech-rate-deviation ${deviation.tone}`}>
+                    <span>표준 범위와 차이</span>
+                    <strong>{deviation.label}</strong>
                 </div>
             </div>
 
-            <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="구간별 말 빠르기 선 그래프">
+            <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="분당 음절 수와 권장 말하기 속도 비교 그래프">
                 <rect x={padding.left} y={padding.top} width={plotWidth} height={plotHeight} rx="6" className="chart-plot-bg" />
+                <rect
+                    x={padding.left}
+                    y={yFor(STANDARD_SYLLABLES_PER_MINUTE_MAX)}
+                    width={plotWidth}
+                    height={yFor(STANDARD_SYLLABLES_PER_MINUTE_MIN) - yFor(STANDARD_SYLLABLES_PER_MINUTE_MAX)}
+                    className="speech-rate-standard-band"
+                />
                 {yTicks.map((tick) => (
                     <g key={`y-${tick}`}>
                         <line x1={padding.left} x2={width - padding.right} y1={yFor(tick)} y2={yFor(tick)} className="chart-grid-line" />
@@ -140,10 +216,25 @@ function SpeechRateChart({ series, onPointClick }) {
                         {formatClock(tick)}
                     </text>
                 ))}
+                <line
+                    x1={padding.left}
+                    x2={width - padding.right}
+                    y1={yFor(STANDARD_SYLLABLES_PER_MINUTE_CENTER)}
+                    y2={yFor(STANDARD_SYLLABLES_PER_MINUTE_CENTER)}
+                    className="speech-rate-standard-line"
+                />
+                <text
+                    x={width - padding.right - 6}
+                    y={yFor(STANDARD_SYLLABLES_PER_MINUTE_CENTER) - 6}
+                    textAnchor="end"
+                    className="speech-rate-standard-label"
+                >
+                    표준 240
+                </text>
                 <path d={linePath} fill="none" className="speech-rate-line" />
                 {series.map((point, index) => (
                     <circle
-                        key={`${point.startSec}-${point.index}`}
+                        key={`minute-${point.index}`}
                         cx={coords[index].x}
                         cy={coords[index].y}
                         r="4"
@@ -155,7 +246,7 @@ function SpeechRateChart({ series, onPointClick }) {
                             if (event.key === "Enter" || event.key === " ") onPointClick?.(point);
                         }}
                     >
-                        <title>{`${formatClock(point.startSec)} · ${point.wpm} 어절/분`}</title>
+                        <title>{`${formatClock(point.startSec)}~${formatClock(point.endSec)} · ${point.syllablesPerMinute} 음절/분`}</title>
                     </circle>
                 ))}
             </svg>
@@ -243,7 +334,7 @@ export default function PresentationDataVisuals({
     actualSeconds,
     onRatePointClick,
 }) {
-    const series = buildSpeechRateSeries(utterances);
+    const series = useMemo(() => buildSpeechRateSeries(utterances), [utterances]);
 
     return (
         <section className="presentation-data-section">
@@ -257,7 +348,7 @@ export default function PresentationDataVisuals({
             <article className="presentation-data-card">
                 <header>
                     <h3>말속도</h3>
-                    <p>전사 구간별 어절/분을 계산해 발표 속도 변화를 표시합니다.</p>
+                    <p>발표를 1분 단위로 나누어 한글 음절 수를 집계하고 권장 속도(210~270음절/분)와 비교합니다.</p>
                 </header>
                 <SpeechRateChart series={series} onPointClick={onRatePointClick} />
             </article>

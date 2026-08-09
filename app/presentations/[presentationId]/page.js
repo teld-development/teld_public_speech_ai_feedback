@@ -85,9 +85,14 @@ const ATTEMPT_STATUS_META = {
     cancelled: { label: "취소됨", tone: "muted" },
 };
 const REFLECTION_FIELD_LABELS = {
-    keep: "유지할 점",
-    improve: "바꿀 점",
-    next: "다음 실행",
+    keep: "우수점",
+    improve: "개선점",
+};
+const LEGACY_REFLECTION_LABELS = {
+    "우수점": "우수점",
+    "개선점": "개선점",
+    "유지할 점": "우수점",
+    "바꿀 점": "개선점",
 };
 
 const GROWTH_CHART = {
@@ -152,6 +157,50 @@ function CategoryIcon({ categoryId }) {
     );
 }
 
+function SessionSummaryIcon({ type }) {
+    const commonProps = {
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 1.9,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        "aria-hidden": "true",
+    };
+
+    if (type === "audience") {
+        return (
+            <svg {...commonProps}>
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+        );
+    }
+    if (type === "attempts") {
+        return (
+            <svg {...commonProps}>
+                <path d="M9 11 12 14 22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+        );
+    }
+    if (type === "score") {
+        return (
+            <svg {...commonProps}>
+                <path d="M3 3v18h18" />
+                <path d="m7 15 4-4 3 3 5-7" />
+            </svg>
+        );
+    }
+    return (
+        <svg {...commonProps}>
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <path d="M16 3v4M8 3v4M3 10h18" />
+        </svg>
+    );
+}
+
 function getDaysLeft(dday) {
     if (!dday) return null;
     const today = new Date();
@@ -200,13 +249,14 @@ function parseLegacyReflectionNote(note) {
     const text = String(note || "").trim();
     if (!text) return [];
 
-    const matches = [...text.matchAll(/\[(유지할 점|바꿀 점|다음 실행)\]\s*([\s\S]*?)(?=\n\n\[(?:유지할 점|바꿀 점|다음 실행)\]|\s*$)/g)];
+    const matches = [...text.matchAll(/\[(우수점|개선점|유지할 점|바꿀 점|다음 실행)\]\s*([\s\S]*?)(?=\n\n\[(?:우수점|개선점|유지할 점|바꿀 점|다음 실행)\]|\s*$)/g)];
     if (matches.length > 0) {
         return matches
-            .map((match) => ({
-                label: match[1],
+            .map((match) => LEGACY_REFLECTION_LABELS[match[1]] ? ({
+                label: LEGACY_REFLECTION_LABELS[match[1]],
                 text: String(match[2] || "").trim(),
-            }))
+            }) : null)
+            .filter(Boolean)
             .filter((entry) => entry.text);
     }
 
@@ -366,7 +416,6 @@ export default function PresentationDetailPage({ params }) {
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [modalError, setModalError] = useState("");
-    const [showAllAttempts, setShowAllAttempts] = useState(false);
     const [activeRecordTab, setActiveRecordTab] = useState("scores");
     const [ratios, setRatios] = useState(AUDIENCE_PRESETS[1].ratios);
     const [selectedPreset, setSelectedPreset] = useState("standard");
@@ -444,11 +493,6 @@ export default function PresentationDetailPage({ params }) {
     const recentCategoryAverages = useMemo(
         () => calculateRecentCategoryAverages(scoredAttempts),
         [scoredAttempts]
-    );
-
-    const visibleAttempts = useMemo(
-        () => (showAllAttempts ? attempts : attempts.slice(0, 3)),
-        [attempts, showAllAttempts]
     );
 
     const totalRatio = useMemo(
@@ -925,6 +969,11 @@ export default function PresentationDetailPage({ params }) {
         );
     }
 
+    const latestScore = typeof presentation.latestScoreAverage === "number"
+        ? presentation.latestScoreAverage
+        : null;
+    const latestScorePercent = latestScore == null ? 0 : Math.max(0, Math.min(100, latestScore * 20));
+
     return (
         <div className="db-layout">
             <header className="db-topbar">
@@ -1003,29 +1052,51 @@ export default function PresentationDetailPage({ params }) {
                     </div>
                 </header>
 
-                <section className="session-summary-grid">
-                    <div className="session-summary-card">
-                        <span>D-day</span>
-                        <strong>{formatDate(presentation.dday)}</strong>
-                    </div>
-                    <div className="session-summary-card">
-                        <span>예상 청중</span>
-                        <strong>{presentation.audience || "미정"}</strong>
-                    </div>
-                    <div className="session-summary-card">
-                        <span>분석 완료</span>
-                        <strong>{completedAttempts.length}회</strong>
-                    </div>
-                    <div className="session-summary-card">
-                        <span>최근 평균</span>
-                        <strong>{formatScore(presentation.latestScoreAverage)}/5</strong>
-                    </div>
-                </section>
+                <div className="session-overview-layout">
+                    <section className="presentation-info-panel">
+                        <header className="presentation-info-header">
+                            <h2>발표 정보</h2>
+                            <span>{ddayText(presentation.dday)}</span>
+                        </header>
+                        <div className="presentation-info-audience">
+                            <span className="presentation-info-audience-icon"><SessionSummaryIcon type="audience" /></span>
+                            <div>
+                                <span>예상 청중</span>
+                                <strong>{presentation.audience || "미정"}</strong>
+                                <small>주제에 대한 사전지식 기준</small>
+                            </div>
+                        </div>
+                        <div className="presentation-info-metrics">
+                            <div>
+                                <span className="presentation-info-metric-icon"><SessionSummaryIcon type="date" /></span>
+                                <div>
+                                    <span>발표 예정일</span>
+                                    <strong>{formatDate(presentation.dday)}</strong>
+                                </div>
+                            </div>
+                            <div>
+                                <span className="presentation-info-metric-icon success"><SessionSummaryIcon type="attempts" /></span>
+                                <div>
+                                    <span>분석 완료</span>
+                                    <strong>{completedAttempts.length}<em>회</em></strong>
+                                </div>
+                            </div>
+                            <div>
+                                <span className="presentation-info-metric-icon"><SessionSummaryIcon type="score" /></span>
+                                <div>
+                                    <span>최근 평균</span>
+                                    <strong>{formatScore(latestScore)}<em>/5</em></strong>
+                                    <div className="presentation-info-score-track" aria-label={latestScore == null ? "평균 점수 없음" : `5점 만점 중 ${formatScore(latestScore)}점`}>
+                                        <i style={{ width: `${latestScorePercent}%` }} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
 
-                <section className="session-panel">
+                    <section className="session-panel attempt-history-panel">
                     <div className="session-panel-header">
                         <h2>회차별 연습 기록</h2>
-                        <span>{attempts.length}개 회차</span>
                     </div>
                     {cleanupMessage && <p className="session-cleanup-note">{cleanupMessage}</p>}
 
@@ -1036,7 +1107,7 @@ export default function PresentationDetailPage({ params }) {
                     ) : (
                         <>
                             <div className="attempt-list">
-                                {visibleAttempts.map((attempt) => (
+                                {attempts.map((attempt) => (
                                     <div
                                         key={attempt.id}
                                         className={`attempt-row attempt-row-${statusMeta(attempt.status).tone}`}
@@ -1048,9 +1119,11 @@ export default function PresentationDetailPage({ params }) {
                                                 disabled={attempt.status !== "completed"}
                                                 onClick={() => openAttemptAnalysis(attempt)}
                                             >
-                                                <div>
-                                                    <strong>{attempt.attemptNo}회차</strong>
-                                                    <span>{sourceLabel(attempt.sourceType)}</span>
+                                                <div className="attempt-primary">
+                                                    <div className="attempt-primary-copy">
+                                                        <strong>{attempt.attemptNo}회차</strong>
+                                                        <span>{sourceLabel(attempt.sourceType)}</span>
+                                                    </div>
                                                 </div>
                                                 <div className="attempt-status-block">
                                                     <span className={`attempt-status-badge attempt-status-${statusMeta(attempt.status).tone}`}>
@@ -1062,33 +1135,34 @@ export default function PresentationDetailPage({ params }) {
                                                             : attempt.errorMessage || ""}
                                                     </strong>
                                                     <span>{formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt)}</span>
+                                                    {attempt.status === "completed" && (
+                                                        <span className="attempt-open-icon" aria-hidden="true">
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <path d="m9 18 6-6-6-6" />
+                                                            </svg>
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </button>
                                             <button
                                                 type="button"
                                                 className="attempt-delete-btn"
                                                 onClick={() => handleDeleteAttempt(attempt)}
+                                                aria-label={`${attempt.attemptNo}회차 삭제`}
+                                                title={`${attempt.attemptNo}회차 삭제`}
                                             >
-                                                삭제
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 10v6M14 10v6" />
+                                                </svg>
                                             </button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            {attempts.length > 3 && (
-                                <div className="attempt-list-actions">
-                                    <button
-                                        type="button"
-                                        className="attempt-toggle-btn"
-                                        onClick={() => setShowAllAttempts((value) => !value)}
-                                    >
-                                        {showAllAttempts ? "접기" : "펼침"}
-                                    </button>
-                                </div>
-                            )}
                         </>
                     )}
-                </section>
+                    </section>
+                </div>
 
                 <section className="session-panel">
                     <div className="session-record-tabs" role="tablist" aria-label="회차 기록 보기">
@@ -1198,7 +1272,6 @@ export default function PresentationDetailPage({ params }) {
                         <div className="record-tab-panel" role="tabpanel">
                             <div className="session-panel-header">
                                 <h2>성찰기록</h2>
-                                <span>{attempts.length}개 회차</span>
                             </div>
                             {attempts.length === 0 ? (
                                 <div className="attempt-empty">
@@ -1208,39 +1281,39 @@ export default function PresentationDetailPage({ params }) {
                                 <div className="reflection-record-list">
                                     {attempts.map((attempt) => {
                                         const reflectionEntries = getReflectionDisplayEntries(attempt);
+                                        const strengthReflection = reflectionEntries.find((entry) => entry.key === "keep" || entry.label === "우수점");
+                                        const improvementReflection = reflectionEntries.find((entry) => entry.key === "improve" || entry.label === "개선점");
+                                        const hasReflection = Boolean(strengthReflection?.text || improvementReflection?.text);
                                         const canOpenAnalysis = attempt.status === "completed" && attempt.analysisResult;
+
                                         return (
-                                            <article
-                                                key={attempt.id}
-                                                className={`reflection-record-card reflection-record-card-${statusMeta(attempt.status).tone}`}
-                                            >
-                                                <div className="reflection-record-head">
-                                                    <div>
-                                                        <strong>{attempt.attemptNo}회차</strong>
-                                                        <span>{sourceLabel(attempt.sourceType)} · {formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt) || "날짜 없음"}</span>
-                                                    </div>
-                                                    <div>
-                                                        <span className={`attempt-status-badge attempt-status-${statusMeta(attempt.status).tone}`}>
-                                                            {statusMeta(attempt.status).label}
-                                                        </span>
-                                                        {canOpenAnalysis && (
-                                                            <button
-                                                                type="button"
-                                                                className="reflection-detail-btn"
-                                                                onClick={() => openAttemptAnalysis(attempt)}
-                                                            >
-                                                                분석 보기
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                            <article key={attempt.id} className="reflection-history-card">
+                                                <div className="reflection-card-attempt">
+                                                    <strong>{attempt.attemptNo}회차</strong>
+                                                    <span>{sourceLabel(attempt.sourceType)}</span>
+                                                    <time>{formatTimestamp(attempt.completedAt || attempt.failedAt || attempt.createdAt) || "날짜 없음"}</time>
                                                 </div>
-                                                <div className="attempt-reflection-grid reflection-record-grid">
-                                                    {reflectionEntries.map((entry) => (
-                                                        <div key={entry.key || entry.label} className="attempt-reflection-item">
-                                                            <strong>{entry.label}</strong>
-                                                            <p className={entry.text ? "" : "empty"}>{entry.text || "미작성"}</p>
-                                                        </div>
-                                                    ))}
+                                                <section className={`reflection-card-copy ${strengthReflection?.text ? "" : "is-empty"}`}>
+                                                    <span>우수점</span>
+                                                    <p>{strengthReflection?.text || "아직 작성하지 않았습니다."}</p>
+                                                </section>
+                                                <section className={`reflection-card-copy ${improvementReflection?.text ? "" : "is-empty"}`}>
+                                                    <span>개선점</span>
+                                                    <p>{improvementReflection?.text || "아직 작성하지 않았습니다."}</p>
+                                                </section>
+                                                <div className="reflection-card-action">
+                                                    {canOpenAnalysis && (
+                                                        <button
+                                                            type="button"
+                                                            className="reflection-detail-btn"
+                                                            onClick={() => openAttemptAnalysis(attempt)}
+                                                        >
+                                                            {hasReflection ? "분석 보기" : "성찰 작성"}
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                                <path d="m9 18 6-6-6-6" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </article>
                                         );

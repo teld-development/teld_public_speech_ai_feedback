@@ -83,9 +83,9 @@ const DUMMY_TRANSCRIPT = [
 const DEMO_REFLECTION_STEPS = [
     {
         id: "keep",
-        label: "잘한점",
-        title: "오늘 발표에서 계속 가져갈 점",
-        desc: "잘 작동했던 표현, 구성, 태도, 자료 활용을 적어두세요.",
+        label: "우수점",
+        title: "이번 발표에서 우수했던 점",
+        desc: "효과적이었던 표현, 구성, 태도, 자료 활용을 적어두세요.",
         placeholder: "예: 도입에서 발표 목적을 먼저 말해서 흐름이 분명했다.",
     },
     {
@@ -94,13 +94,6 @@ const DEMO_REFLECTION_STEPS = [
         title: "다음 회차에서 조정할 점",
         desc: "분석 결과를 보고 가장 먼저 고치고 싶은 한두 가지를 정리하세요.",
         placeholder: "예: 결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
-    },
-    {
-        id: "next",
-        label: "다음 계획",
-        title: "다음 연습에서 실제로 할 행동",
-        desc: "다음 회차 전에 바로 실행할 수 있는 연습 계획을 적어두세요.",
-        placeholder: "예: 마지막 30초 결론부만 따로 3번 녹화해보기.",
     },
 ];
 
@@ -139,7 +132,6 @@ export default function FeedbackDemoPage() {
     const [demoReflectionFields, setDemoReflectionFields] = useState({
         keep: "도입에서 발표 목적을 먼저 말한 점은 유지하고 싶다.",
         improve: "결론에서 핵심 문장을 더 짧고 분명하게 말해야겠다.",
-        next: "마지막 30초 결론부만 따로 3번 녹화해보기.",
     });
     const [summaryModal, setSummaryModal] = useState(null);
     const [bottomTab, setBottomTab] = useState("data");

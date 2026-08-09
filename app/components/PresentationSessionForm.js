@@ -3,13 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPresentationSession, updatePresentationSession } from "../lib/presentations";
 import { uploadPresentationMaterial } from "../lib/presentationMaterial";
-
-const AUDIENCE_OPTIONS = [
-    "교수님",
-    "학생들",
-    "학회/세미나 청중",
-    "기타",
-];
+import { AUDIENCE_OPTIONS, normalizeAudience } from "../lib/audiences";
 
 const PRESENTATION_TYPE_OPTIONS = ["설득", "설명"];
 
@@ -17,7 +11,7 @@ function initialValue(presentation) {
     return {
         title: presentation?.title || "발표",
         topic: presentation?.topic || "",
-        audience: presentation?.audience || "",
+        audience: normalizeAudience(presentation?.audience),
         dday: presentation?.dday || "",
         duration: presentation?.duration || "",
         presentationType: presentation?.presentationType || "",
@@ -46,6 +40,7 @@ export default function PresentationSessionForm({
 
     const canSubmit = values.title.trim() && values.topic.trim() && values.audience && values.dday && values.presentationType && user;
     const isEditing = mode === "edit";
+    const hasLegacyAudience = values.audience && !AUDIENCE_OPTIONS.includes(values.audience);
     const fieldId = (name) => `${formId}-${name}`;
 
     const updateValue = (name, value) => {
@@ -140,6 +135,7 @@ export default function PresentationSessionForm({
                         <label htmlFor={fieldId("audience")}>예상 청중 *</label>
                         <select id={fieldId("audience")} value={values.audience} onChange={(event) => updateValue("audience", event.target.value)}>
                             <option value="">선택하세요</option>
+                            {hasLegacyAudience && <option value={values.audience}>{values.audience} (기존 설정)</option>}
                             {AUDIENCE_OPTIONS.map((option) => (
                                 <option key={option} value={option}>{option}</option>
                             ))}

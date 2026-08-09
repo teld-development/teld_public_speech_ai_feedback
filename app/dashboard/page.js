@@ -157,23 +157,14 @@ export default function DashboardPage() {
 
             <main className="db-main">
                 <div className="session-home">
-                    <section className="dashboard-hero" aria-label="AI 발표 피드백 대시보드">
-                        <img src="/images/dashboard-banner.png" alt="" />
-                        <div className="dashboard-hero-content">
-                            <p className="session-eyebrow">연습하기</p>
-                            <h1>발표를 준비하세요</h1>
-                            <p>예정된 발표 날짜를 정하고, 그 날짜까지 AI와 함께 실력을 향상시켜보세요!</p>
-                            <button type="button" className="btn-primary dashboard-hero-action" onClick={openCreateModal}>
-                                발표 추가
-                            </button>
-                        </div>
-                    </section>
-
                     <section className="session-list-heading">
                         <div>
                             <p>내 발표 세션</p>
                             <h2>진행 중인 발표</h2>
                         </div>
+                        <button type="button" className="btn-primary session-list-action" onClick={openCreateModal}>
+                            발표 추가
+                        </button>
                     </section>
 
                     {error && <p className="session-error">{error}</p>}

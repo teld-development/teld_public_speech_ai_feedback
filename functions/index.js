@@ -13,6 +13,7 @@ const {
   FEEDBACK_CATEGORIES,
   FEEDBACK_ITEMS_BY_ID,
   ALL_ITEM_IDS,
+  normalizeFeedbackItemIds,
   buildEmptyCategoryAverages,
 } = require("./lib/feedbackAreas.cjs");
 
@@ -955,7 +956,7 @@ async function runPresentationAnalysisJob({ uid, presentationId, attemptId, job,
   }
 
   const activeItemIds = Array.isArray(job.feedbackItems) && job.feedbackItems.length > 0
-    ? job.feedbackItems.filter((id) => FEEDBACK_ITEMS_BY_ID[id])
+    ? normalizeFeedbackItemIds(job.feedbackItems)
     : ALL_ITEM_IDS;
 
   const activeCategories = FEEDBACK_CATEGORIES

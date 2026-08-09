@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { FEEDBACK_CATEGORIES, buildEmptyCategoryAverages } from "./feedbackAreas";
+import { normalizeAudience } from "./audiences";
 
 export const RECORDINGS_BUCKET = "public-speech-feedback.firebasestorage.app";
 
@@ -74,7 +75,7 @@ export async function createPresentationSession(user, data) {
     const payload = {
         title: data.title?.trim() || "발표",
         topic: data.topic?.trim() || "",
-        audience: data.audience || "",
+        audience: normalizeAudience(data.audience),
         dday: data.dday || "",
         duration: data.duration?.trim() || "",
         presentationType: data.presentationType || "",
@@ -100,7 +101,7 @@ export async function updatePresentationSession(user, presentationId, data) {
     const payload = {
         title: data.title?.trim() || "발표",
         topic: data.topic?.trim() || "",
-        audience: data.audience || "",
+        audience: normalizeAudience(data.audience),
         dday: data.dday || "",
         duration: data.duration?.trim() || "",
         presentationType: data.presentationType || "",
@@ -117,7 +118,8 @@ export async function getPresentationSession(user, presentationId) {
     const ref = doc(db, "users", user.uid, "presentations", presentationId);
     const snap = await getDoc(ref);
     if (!snap.exists()) throw new Error("발표 세션을 찾을 수 없습니다.");
-    return { id: snap.id, ...snap.data() };
+    const data = snap.data();
+    return { id: snap.id, ...data, audience: normalizeAudience(data.audience) };
 }
 
 export async function createPresentationAttempt(user, presentationId, sourceType) {

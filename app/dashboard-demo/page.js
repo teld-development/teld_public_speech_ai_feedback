@@ -61,9 +61,8 @@ const DEMO_ATTEMPTS = [
 ];
 
 const REFLECTION_LABELS = {
-    keep: "유지할 점",
-    improve: "바꿀 점",
-    next: "다음 실행",
+    keep: "우수점",
+    improve: "개선점",
 };
 
 function formatScore(value) {
