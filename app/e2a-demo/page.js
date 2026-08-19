@@ -119,7 +119,7 @@ export default function E2ADemoPage() {
     }
 
     return (
-        <main className="analysis-page-v2 e2a-review-page">
+        <main className={`analysis-page-v2 e2a-review-page ${stage === "review" ? "is-review" : "is-action"}`}>
             <header className="analysis-header-v2 e2a-review-header">
                 <Link href="/dashboard-demo" className="db-topbar-brand e2a-review-brand">
                     <img src="/logo.png" alt="" className="db-topbar-logo" />
