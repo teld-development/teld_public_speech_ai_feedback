@@ -13,9 +13,10 @@ const FEEDBACK = [
         score: 2,
         time: "05:07",
         seconds: 307,
+        evidenceLabel: "원문 발화",
         criterion: "발표 내용을 완결성 있고 명료한 문장으로 전달한다.",
         comment: "발화 중간에 멈칫하거나 ‘산업을 활용, 어, 산업 사용할 수 있고’처럼 말을 고치는 부분이 여러 차례 나타나, 문장의 완결성과 청중의 이해도를 저해합니다. 스크립트에 의존하기보다는 내용을 충분히 숙지하고 자연스럽게 전달하는 연습이 필요합니다.",
-        evidence: "“이러한 사태 이후 쿠팡으로 쿠팡 같은 경우에는 많은 이용자들이 많이 빠져나갔지만…”처럼 문장을 고치거나 같은 표현을 거듭하는 장면이 이어집니다.",
+        evidence: "이러한 사태 이후 쿠팡으로 쿠팡 같은 경우에는 많은 이용자들이 많이 빠져나갔지만 현재는 사고 이전의 수준을 회복한 모습을 살펴볼 수 있습니다.",
         suggestion: "한 문장에는 하나의 핵심 정보만 담고, 전략별 핵심 문장을 소리 내어 미리 연습해보세요.",
     },
     {
@@ -25,6 +26,7 @@ const FEEDBACK = [
         score: 1,
         time: "00:41",
         seconds: 41,
+        evidenceLabel: "영상 관찰",
         criterion: "청중과 골고루 시선 접촉을 유지한다.",
         comment: "발표 내내 시선이 카메라(청중)를 향하기보다는 아래쪽의 자료를 읽는 데 집중되어 있습니다. 간혹 카메라를 보지만 짧게 스쳐 지나가 청중과의 연결감이 부족합니다.",
         evidence: "00:41부터 핵심 자원과 역량을 설명하는 동안 시선이 아래쪽 자료에 머물고, 카메라를 바라보는 시간은 짧습니다.",
@@ -37,9 +39,10 @@ const FEEDBACK = [
         score: 2,
         time: "03:47",
         seconds: 227,
+        evidenceLabel: "원문 발화",
         criterion: "문법에 맞고 의미가 분명한 표현으로 발표 내용을 전달한다.",
         comment: "문장이 지나치게 길고 ‘이러한’과 같은 표현이 반복되어 의미 전달이 모호하고 집중을 방해했습니다. 간결한 문장으로 다듬을 필요가 있습니다.",
-        evidence: "“쿠팡과 같은 경우에는 이런 인지 탐색 부분이 모두 약하기 때문에 이러한 쇼핑의 여정의 소비 단계를 빼앗기면…”처럼 한 문장에 여러 정보와 반복 표현이 함께 나타납니다.",
+        evidence: "쿠팡과 같은 경우에는 이런 인지 탐색 부분이 모두 약하기 때문에 이러한 쇼핑의 여정의 소비 단계를 빼앗기면 물류 강점이 있어도 트래픽 자체를 잃을 위험을 가지고 있다고 볼 수 있습니다.",
         suggestion: "반복되는 ‘이러한’, ‘같은 경우에는’을 덜어내고 원인과 결과를 두 문장으로 나누어 말해보세요.",
     },
 ];
@@ -144,9 +147,12 @@ export default function E2ADemoPage() {
                                 </div>
 
                                 <div className="e2a-review-evidence">
-                                    <div className="e2a-review-evidence-heading"><strong>영상 근거 <time>{active.time}</time></strong><button type="button" onClick={() => seekToFeedback(active)}>이 구간 다시 보기</button></div>
-                                    <blockquote>{active.evidence}</blockquote>
-                                    <dl><dt>평가기준</dt><dd>{active.criterion}</dd><dt>분석 점수</dt><dd><strong>{active.score}/5</strong> · 해당 영역 최저점</dd></dl>
+                                    <div className="e2a-review-evidence-heading">
+                                        <div><small>관찰된 사실</small><strong>영상에서 확인된 장면 <time>{active.time}</time></strong></div>
+                                        <button type="button" onClick={() => seekToFeedback(active)}>이 구간 다시 보기</button>
+                                    </div>
+                                    <p className="e2a-review-evidence-guide">AI의 해석을 제외하고, 해당 구간에서 직접 확인할 수 있는 내용입니다.</p>
+                                    <blockquote><span>{active.evidenceLabel}</span>{active.evidence}</blockquote>
                                 </div>
 
                                 <div className="e2a-review-feedback-list" role="tablist" aria-label="검토할 피드백">
@@ -165,12 +171,16 @@ export default function E2ADemoPage() {
 
                             <form className="e2a-review-form" onSubmit={(event) => event.preventDefault()}>
                                 <header>
-                                    <div><span>{active.area}</span><h3>{active.title}</h3></div>
+                                    <div><span>AI 분석 · {active.area}</span><h3>{active.title}</h3></div>
                                     <small><strong>{completed}</strong> / {FEEDBACK.length} 검토</small>
                                 </header>
+                                <div className="e2a-review-criterion">
+                                    <div><small>판단 기준</small><p>{active.criterion}</p></div>
+                                    <div><small>분석 점수</small><strong>{active.score}/5</strong><span>영역 최저점</span></div>
+                                </div>
                                 <div className="e2a-review-ai-copy">
-                                    <small>AI 피드백</small><p>{active.comment}</p>
-                                    <p className="e2a-review-suggestion"><strong>제안</strong>{active.suggestion}</p>
+                                    <small>AI의 판단</small><p>{active.comment}</p>
+                                    <p className="e2a-review-suggestion"><strong>개선 제안</strong>{active.suggestion}</p>
                                 </div>
 
                                 <fieldset className="e2a-review-options">
