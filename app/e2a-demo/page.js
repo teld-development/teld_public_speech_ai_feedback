@@ -145,16 +145,13 @@ export default function E2ADemoPage() {
                                     <video ref={videoRef} src={VIDEO_URL} controls preload="metadata" playsInline />
                                     <div className="e2a-review-video-meta"><span>실제 발표 영상</span><strong>쿠팡 이종업계 진입의 대응전략</strong></div>
                                 </div>
+                            </div>
 
-                                <div className="e2a-review-evidence">
-                                    <div className="e2a-review-evidence-heading">
-                                        <div><small>관찰된 사실</small><strong>영상에서 확인된 장면 <time>{active.time}</time></strong></div>
-                                        <button type="button" onClick={() => seekToFeedback(active)}>이 구간 다시 보기</button>
-                                    </div>
-                                    <p className="e2a-review-evidence-guide">AI의 해석을 제외하고, 해당 구간에서 직접 확인할 수 있는 내용입니다.</p>
-                                    <blockquote><span>{active.evidenceLabel}</span>{active.evidence}</blockquote>
-                                </div>
-
+                            <form className="e2a-review-form" onSubmit={(event) => event.preventDefault()}>
+                                <header>
+                                    <div><span>AI 분석 · {active.area}</span><h3>{active.title}</h3></div>
+                                    <small><strong>{completed}</strong> / {FEEDBACK.length} 검토</small>
+                                </header>
                                 <div className="e2a-review-feedback-list" role="tablist" aria-label="검토할 피드백">
                                     {FEEDBACK.map((item, index) => {
                                         const isComplete = Boolean(decisions[item.id]?.value && decisions[item.id]?.reason.trim());
@@ -167,13 +164,14 @@ export default function E2ADemoPage() {
                                         );
                                     })}
                                 </div>
-                            </div>
-
-                            <form className="e2a-review-form" onSubmit={(event) => event.preventDefault()}>
-                                <header>
-                                    <div><span>AI 분석 · {active.area}</span><h3>{active.title}</h3></div>
-                                    <small><strong>{completed}</strong> / {FEEDBACK.length} 검토</small>
-                                </header>
+                                <div className="e2a-review-evidence">
+                                    <div className="e2a-review-evidence-heading">
+                                        <div><small>관찰된 사실</small><strong>영상에서 확인된 장면 <time>{active.time}</time></strong></div>
+                                        <button type="button" onClick={() => seekToFeedback(active)}>구간 재생</button>
+                                    </div>
+                                    <p className="e2a-review-evidence-guide">AI의 해석을 제외하고, 해당 구간에서 직접 확인할 수 있는 내용입니다.</p>
+                                    <blockquote><span>{active.evidenceLabel}</span>{active.evidence}</blockquote>
+                                </div>
                                 <div className="e2a-review-criterion">
                                     <div><small>판단 기준</small><p>{active.criterion}</p></div>
                                     <div><small>분석 점수</small><strong>{active.score}/5</strong><span>영역 최저점</span></div>

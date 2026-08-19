@@ -120,6 +120,7 @@
   min-width: 0;
   padding: 20px;
   border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .e2a-review-video {
@@ -174,7 +175,8 @@
 }
 
 .e2a-review-evidence {
-  padding: 22px 2px 20px;
+  padding: 20px 0 18px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .e2a-review-evidence-heading {
@@ -253,6 +255,21 @@
   overflow: hidden;
   border: 1px solid #e2e8f0;
   border-radius: 9px;
+}
+
+.e2a-review-form > .e2a-review-feedback-list {
+  grid-template-columns: 1fr;
+  margin-top: 16px;
+}
+
+.e2a-review-form > .e2a-review-feedback-list button {
+  min-height: 56px;
+  border-right: 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.e2a-review-form > .e2a-review-feedback-list button:last-child {
+  border-bottom: 0;
 }
 
 .e2a-review-feedback-list button {
@@ -377,7 +394,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px;
-  margin-top: 18px;
+  margin-top: 16px;
   padding: 14px 16px;
   border: 1px solid #dbeafe;
   border-radius: 9px;
