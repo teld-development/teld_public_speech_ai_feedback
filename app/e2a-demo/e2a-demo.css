@@ -1283,12 +1283,11 @@
 
 /* Reuse the analysis screen's category and subarea icon language in the review tabs. */
 .e2a-review-workbench > .e2a-review-feedback-list button {
-  grid-template-columns: 44px minmax(0, 1fr) 36px;
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 12px;
 }
 
-.e2a-review-feedback-list button > .e2a-feedback-area-icon,
-.e2a-review-feedback-list button > .e2a-feedback-item-icon {
+.e2a-review-feedback-list button > .e2a-feedback-area-icon {
   position: relative;
   display: grid;
   place-items: center;
@@ -1301,13 +1300,6 @@
   height: 42px;
 }
 
-.e2a-review-feedback-list button > .e2a-feedback-item-icon {
-  width: 34px;
-  height: 34px;
-  border: 1px solid currentColor;
-  background: #fff;
-}
-
 .e2a-review-feedback-list .e2a-feedback-area-icon svg {
   width: 23px;
   height: 23px;
@@ -1315,32 +1307,25 @@
   stroke: currentColor;
 }
 
-.e2a-review-feedback-list .e2a-feedback-item-icon svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-}
-
 .e2a-feedback-area-icon.category-content,
-.e2a-feedback-item-icon.category-content {
+.e2a-feedback-subarea-icon.category-content {
   color: #2563eb;
   background: #eff6ff;
 }
 
 .e2a-feedback-area-icon.category-organization,
-.e2a-feedback-item-icon.category-organization {
+.e2a-feedback-subarea-icon.category-organization {
   color: #7c3aed;
   background: #f5f3ff;
 }
 
 .e2a-feedback-area-icon.category-expression,
-.e2a-feedback-item-icon.category-expression {
+.e2a-feedback-subarea-icon.category-expression {
   color: #059669;
   background: #ecfdf5;
 }
 
-.e2a-feedback-item-icon.complete::after {
+.e2a-feedback-area-icon.complete::after {
   position: absolute;
   right: -5px;
   bottom: -5px;
@@ -1355,6 +1340,22 @@
   content: "✓";
   font-size: 9px;
   font-weight: 900;
+}
+
+.e2a-feedback-subarea-icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border-radius: 6px;
+}
+
+.e2a-feedback-subarea-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
 }
 
 .e2a-review-feedback-list button div > strong {

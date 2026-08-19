@@ -152,12 +152,11 @@ export default function E2ADemoPage() {
                                     const isComplete = Boolean(decisions[item.id]?.value && decisions[item.id]?.reason.trim());
                                     return (
                                         <button key={item.id} type="button" role="tab" aria-selected={index === activeIndex} className={index === activeIndex ? "active" : ""} onClick={() => selectFeedback(index)}>
-                                            <span className={`e2a-feedback-area-icon category-${item.categoryId}`}><FeedbackCategoryIcon categoryId={item.categoryId} /></span>
+                                            <span className={`e2a-feedback-area-icon category-${item.categoryId} ${isComplete ? "complete" : ""}`}><FeedbackCategoryIcon categoryId={item.categoryId} /></span>
                                             <div>
                                                 <small>{index + 1}번 피드백</small>
-                                                <strong><span>대영역</span><em>{item.area}</em><i>›</i><span>소영역</span><em>{item.title}</em></strong>
+                                                <strong><span>대영역</span><em>{item.area}</em><i>›</i><b className={`e2a-feedback-subarea-icon category-${item.categoryId}`}><FeedbackItemIcon itemId={item.itemId} /></b><span>소영역</span><em>{item.title}</em></strong>
                                             </div>
-                                            <span className={`e2a-feedback-item-icon category-${item.categoryId} ${isComplete ? "complete" : ""}`}><FeedbackItemIcon itemId={item.itemId} /></span>
                                         </button>
                                     );
                                 })}
