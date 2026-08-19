@@ -210,9 +210,9 @@ export default function E2ADemoPage() {
 
                                 <footer className="e2a-review-form-actions">
                                     {activeIndex > 0 ? <button type="button" className="e2a-review-secondary" onClick={() => selectFeedback(activeIndex - 1)}>이전 피드백</button> : <span />}
-                                    {activeIndex < FEEDBACK.length - 1
-                                        ? <button type="button" className="btn-primary-sm" onClick={() => selectFeedback(activeIndex + 1)}>다음 피드백</button>
-                                        : <button type="button" className="btn-primary-sm" onClick={openActionStage} disabled={!usableFeedback.length}>개선 행동 선택</button>}
+                                    {activeIndex === FEEDBACK.length - 1
+                                        ? <button type="button" className="btn-primary-sm" onClick={openActionStage} disabled={!usableFeedback.length}>개선 행동 선택</button>
+                                        : <span />}
                                 </footer>
                             </form>
                     </section>
