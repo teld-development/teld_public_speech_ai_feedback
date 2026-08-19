@@ -114,12 +114,17 @@
 
 .e2a-review-workbench {
   grid-template-columns: minmax(460px, .8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
 }
 
 .e2a-review-media {
   min-width: 0;
   padding: 20px;
-  border-right: 1px solid #e2e8f0;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px;
   background: #f8fafc;
 }
 
@@ -261,9 +266,9 @@
 
 .e2a-review-workbench > .e2a-review-feedback-list {
   grid-column: 1 / -1;
-  border: 0;
-  border-bottom: 1px solid #dbe2ea;
-  border-radius: 0;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px;
+  background: #fff;
 }
 
 .e2a-review-workbench > .e2a-review-feedback-list button {
@@ -372,6 +377,9 @@
   min-width: 0;
   flex-direction: column;
   padding: 26px 28px;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px;
+  background: #fff;
 }
 
 .e2a-review-form > header {
@@ -492,7 +500,8 @@
   align-items: start;
   gap: 18px 32px;
   padding: 28px 32px 30px;
-  border-top: 1px solid #dbe2ea;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px;
   background: #fff;
 }
 
@@ -1191,6 +1200,10 @@
   .e2a-action-selection {
     border-right: 0;
     border-bottom: 1px solid #e2e8f0;
+  }
+
+  .e2a-review-media {
+    border: 1px solid #dbe2ea;
   }
 }
 
