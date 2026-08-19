@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
+import { FeedbackCategoryIcon, FeedbackItemIcon } from "../components/FeedbackAreaIcons";
 
 const VIDEO_URL = "https://firebasestorage.googleapis.com/v0/b/public-speech-feedback.firebasestorage.app/o/recordings%2FPOZ5a41bw2dkXMkdwj6VRtqk0pq2%2Fpresentations%2FDTRTRGm4jhb759BLfBcT%2Fattempts%2FIoPOcn2JwGQsHRdHSvLC%2Fraw%2FVideo_Project_5.mp4?alt=media&token=f1f1e2f9-9628-45d7-a15c-ab28190474b8";
 
 const FEEDBACK = [
     {
         id: "organization",
+        categoryId: "organization",
+        itemId: "explanation_method",
         area: "조직",
         title: "문장 완결성 및 명료성",
         score: 2,
@@ -21,7 +24,9 @@ const FEEDBACK = [
     },
     {
         id: "delivery",
-        area: "표현 및 전달",
+        categoryId: "expression",
+        itemId: "eye_contact",
+        area: "전달 및 표현",
         title: "시선 처리",
         score: 1,
         time: "00:41",
@@ -34,6 +39,8 @@ const FEEDBACK = [
     },
     {
         id: "content",
+        categoryId: "content",
+        itemId: "presentation_content",
         area: "내용",
         title: "문법 및 언어 정확성",
         score: 2,
@@ -145,8 +152,12 @@ export default function E2ADemoPage() {
                                     const isComplete = Boolean(decisions[item.id]?.value && decisions[item.id]?.reason.trim());
                                     return (
                                         <button key={item.id} type="button" role="tab" aria-selected={index === activeIndex} className={index === activeIndex ? "active" : ""} onClick={() => selectFeedback(index)}>
-                                            <span>{isComplete ? <CheckIcon /> : index + 1}</span>
-                                            <div><small>{index + 1}번 피드백 · {item.area}</small><strong>{item.title}</strong></div>
+                                            <span className={`e2a-feedback-area-icon category-${item.categoryId}`}><FeedbackCategoryIcon categoryId={item.categoryId} /></span>
+                                            <div>
+                                                <small>{index + 1}번 피드백</small>
+                                                <strong><span>대영역</span><em>{item.area}</em><i>›</i><span>소영역</span><em>{item.title}</em></strong>
+                                            </div>
+                                            <span className={`e2a-feedback-item-icon category-${item.categoryId} ${isComplete ? "complete" : ""}`}><FeedbackItemIcon itemId={item.itemId} /></span>
                                         </button>
                                     );
                                 })}

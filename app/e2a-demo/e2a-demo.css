@@ -1280,3 +1280,125 @@
     font-size: 20px;
   }
 }
+
+/* Reuse the analysis screen's category and subarea icon language in the review tabs. */
+.e2a-review-workbench > .e2a-review-feedback-list button {
+  grid-template-columns: 44px minmax(0, 1fr) 36px;
+  gap: 12px;
+}
+
+.e2a-review-feedback-list button > .e2a-feedback-area-icon,
+.e2a-review-feedback-list button > .e2a-feedback-item-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+}
+
+.e2a-review-feedback-list button > .e2a-feedback-area-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.e2a-review-feedback-list button > .e2a-feedback-item-icon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid currentColor;
+  background: #fff;
+}
+
+.e2a-review-feedback-list .e2a-feedback-area-icon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+}
+
+.e2a-review-feedback-list .e2a-feedback-item-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+}
+
+.e2a-feedback-area-icon.category-content,
+.e2a-feedback-item-icon.category-content {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.e2a-feedback-area-icon.category-organization,
+.e2a-feedback-item-icon.category-organization {
+  color: #7c3aed;
+  background: #f5f3ff;
+}
+
+.e2a-feedback-area-icon.category-expression,
+.e2a-feedback-item-icon.category-expression {
+  color: #059669;
+  background: #ecfdf5;
+}
+
+.e2a-feedback-item-icon.complete::after {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #fff;
+  content: "✓";
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.e2a-review-feedback-list button div > strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.e2a-review-feedback-list button div > strong > span {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.e2a-review-feedback-list button div > strong > em {
+  color: #1e293b;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 800;
+  word-break: keep-all;
+}
+
+.e2a-review-feedback-list button div > strong > i {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 14px;
+  font-style: normal;
+}
+
+@media (min-width: 1001px) {
+  .e2a-review-page.is-review .e2a-review-workbench > .e2a-review-feedback-list button > .e2a-feedback-area-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .e2a-review-page.is-review .e2a-review-feedback-list button div > small {
+    margin-bottom: 4px;
+    font-size: 13px;
+  }
+}
