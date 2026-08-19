@@ -146,7 +146,7 @@ export default function E2ADemoPage() {
                                     return (
                                         <button key={item.id} type="button" role="tab" aria-selected={index === activeIndex} className={index === activeIndex ? "active" : ""} onClick={() => selectFeedback(index)}>
                                             <span>{isComplete ? <CheckIcon /> : index + 1}</span>
-                                            <div><small>{item.area}</small><strong>{item.title}</strong></div>
+                                            <div><small>{index + 1}번 피드백 · {item.area}</small><strong>{item.title}</strong></div>
                                         </button>
                                     );
                                 })}
