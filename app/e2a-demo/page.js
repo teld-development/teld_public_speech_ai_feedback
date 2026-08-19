@@ -147,7 +147,6 @@ export default function E2ADemoPage() {
                                         <button key={item.id} type="button" role="tab" aria-selected={index === activeIndex} className={index === activeIndex ? "active" : ""} onClick={() => selectFeedback(index)}>
                                             <span>{isComplete ? <CheckIcon /> : index + 1}</span>
                                             <div><small>{item.area}</small><strong>{item.title}</strong></div>
-                                            <time>{item.time}</time>
                                         </button>
                                     );
                                 })}
@@ -184,7 +183,7 @@ export default function E2ADemoPage() {
 
                             <form className="e2a-review-judgment" onSubmit={(event) => event.preventDefault()}>
                                 <fieldset className="e2a-review-options">
-                                    <legend>이 피드백을 어떻게 판단하나요?</legend>
+                                    <legend>판단 결과</legend>
                                     {OPTIONS.map((option) => (
                                         <button key={option.id} type="button" className={decisions[active.id]?.value === option.id ? "active" : ""} onClick={() => changeDecision(option.id)}>
                                             <span>{decisions[active.id]?.value === option.id && <CheckIcon />}</span>

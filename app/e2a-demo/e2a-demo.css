@@ -113,7 +113,7 @@
 }
 
 .e2a-review-workbench {
-  grid-template-columns: minmax(0, 1.4fr) minmax(440px, .72fr);
+  grid-template-columns: minmax(460px, .8fr) minmax(0, 1.2fr);
 }
 
 .e2a-review-media {
@@ -125,7 +125,9 @@
 
 .e2a-review-video {
   position: relative;
-  height: clamp(440px, 52vh, 590px);
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   border-radius: 10px;
   background: #0f172a;
@@ -265,8 +267,31 @@
 }
 
 .e2a-review-workbench > .e2a-review-feedback-list button {
-  min-height: 72px;
-  padding: 11px 20px;
+  min-height: 88px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  padding: 15px 24px;
+}
+
+.e2a-review-workbench > .e2a-review-feedback-list button > span {
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+}
+
+.e2a-review-workbench > .e2a-review-feedback-list button > span svg {
+  width: 17px;
+  height: 17px;
+}
+
+.e2a-review-workbench > .e2a-review-feedback-list button small {
+  margin-bottom: 5px;
+  font-size: 15px;
+}
+
+.e2a-review-workbench > .e2a-review-feedback-list button strong {
+  font-size: 17px;
+  line-height: 1.35;
 }
 
 .e2a-review-feedback-list button {
@@ -461,7 +486,11 @@
 }
 
 .e2a-review-judgment {
+  display: grid;
   grid-column: 1 / -1;
+  grid-template-columns: minmax(360px, .8fr) minmax(0, 1.2fr);
+  align-items: start;
+  gap: 18px 32px;
   padding: 28px 32px 30px;
   border-top: 1px solid #dbe2ea;
   background: #fff;
@@ -475,7 +504,7 @@
 
 .e2a-review-options {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin: 0;
   padding: 0;
@@ -553,7 +582,7 @@
 
 .e2a-review-reason {
   display: block;
-  margin-top: 24px;
+  margin-top: 0;
 }
 
 .e2a-review-reason > span,
@@ -601,6 +630,7 @@
 }
 
 .e2a-review-judgment .e2a-review-form-actions {
+  grid-column: 1 / -1;
   margin-top: 18px;
 }
 
@@ -961,11 +991,13 @@
   }
 
   .e2a-review-judgment {
+    grid-template-columns: 1fr;
     padding: 22px 18px 24px;
   }
 
   .e2a-review-video {
-    height: 230px;
+    height: auto;
+    aspect-ratio: 4 / 3;
   }
 
   .e2a-review-feedback-list {
