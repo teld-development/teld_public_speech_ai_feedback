@@ -13,7 +13,6 @@ const FEEDBACK = [
         itemId: "explanation_method",
         area: "조직",
         title: "문장 완결성 및 명료성",
-        score: 2,
         time: "05:07",
         seconds: 307,
         evidenceLabel: "원문 발화",
@@ -28,7 +27,6 @@ const FEEDBACK = [
         itemId: "eye_contact",
         area: "전달 및 표현",
         title: "시선 처리",
-        score: 1,
         time: "00:41",
         seconds: 41,
         evidenceLabel: "영상 관찰",
@@ -43,7 +41,6 @@ const FEEDBACK = [
         itemId: "presentation_content",
         area: "내용",
         title: "문법 및 언어 정확성",
-        score: 2,
         time: "03:47",
         seconds: 227,
         evidenceLabel: "원문 발화",
@@ -170,24 +167,23 @@ export default function E2ADemoPage() {
 
                             <div className="e2a-review-form">
                                 <header>
-                                    <div><span>AI 분석 · {active.area}</span><h3>{active.title}</h3></div>
+                                    <div><span>{active.area} 피드백</span><h3>{active.title}</h3></div>
                                     <small><strong>{completed}</strong> / {FEEDBACK.length} 검토</small>
                                 </header>
                                 <div className="e2a-review-evidence">
                                     <div className="e2a-review-evidence-heading">
-                                        <div><small>관찰된 사실</small><strong>영상에서 확인된 장면 <time>{active.time}</time></strong></div>
+                                        <div><small>영상 근거</small><strong>확인된 장면 <time>{active.time}</time></strong></div>
                                         <button type="button" onClick={() => seekToFeedback(active)}>구간 재생</button>
                                     </div>
-                                    <p className="e2a-review-evidence-guide">AI의 해석을 제외하고, 해당 구간에서 직접 확인할 수 있는 내용입니다.</p>
                                     <blockquote><span>{active.evidenceLabel}</span>{active.evidence}</blockquote>
                                 </div>
                                 <div className="e2a-review-criterion">
                                     <div><small>판단 기준</small><p>{active.criterion}</p></div>
-                                    <div><small>분석 점수</small><strong>{active.score}/5</strong><span>영역 최저점</span></div>
                                 </div>
                                 <div className="e2a-review-ai-copy">
-                                    <small>AI의 판단</small><p>{active.comment}</p>
-                                    <p className="e2a-review-suggestion"><strong>개선 제안</strong>{active.suggestion}</p>
+                                    <small>AI 피드백</small>
+                                    <p>{active.comment}</p>
+                                    <div className="e2a-review-suggestion"><strong>개선 제안</strong><p>{active.suggestion}</p></div>
                                 </div>
                             </div>
 
