@@ -257,19 +257,16 @@
   border-radius: 9px;
 }
 
-.e2a-review-form > .e2a-review-feedback-list {
-  grid-template-columns: 1fr;
-  margin-top: 16px;
+.e2a-review-workbench > .e2a-review-feedback-list {
+  grid-column: 1 / -1;
+  border: 0;
+  border-bottom: 1px solid #dbe2ea;
+  border-radius: 0;
 }
 
-.e2a-review-form > .e2a-review-feedback-list button {
-  min-height: 56px;
-  border-right: 0;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.e2a-review-form > .e2a-review-feedback-list button:last-child {
-  border-bottom: 0;
+.e2a-review-workbench > .e2a-review-feedback-list button {
+  min-height: 72px;
+  padding: 11px 20px;
 }
 
 .e2a-review-feedback-list button {
@@ -463,6 +460,13 @@
   font-size: 13px;
 }
 
+.e2a-review-judgment {
+  grid-column: 1 / -1;
+  padding: 28px 32px 30px;
+  border-top: 1px solid #dbe2ea;
+  background: #fff;
+}
+
 .e2a-review-suggestion strong {
   margin-right: 8px;
   color: #2563eb;
@@ -471,28 +475,28 @@
 
 .e2a-review-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
   margin: 0;
-  padding: 22px 0 0;
+  padding: 0;
   border: 0;
 }
 
 .e2a-review-options legend {
-  margin-bottom: 11px;
+  margin-bottom: 14px;
   padding: 0;
   color: #0f172a;
-  font-size: 13px;
-  font-weight: 750;
+  font-size: 17px;
+  font-weight: 800;
 }
 
 .e2a-review-options button {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
-  min-height: 52px;
-  padding: 9px 11px;
+  min-height: 68px;
+  padding: 12px 14px;
   border: 1px solid #dbe2ea;
   border-radius: 8px;
   background: #fff;
@@ -508,8 +512,8 @@
 
 .e2a-review-options button > span {
   display: inline-grid;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   place-items: center;
   border: 1px solid #cbd5e1;
   border-radius: 50%;
@@ -537,19 +541,19 @@
 
 .e2a-review-options button strong {
   color: #334155;
-  font-size: 12px;
-  font-weight: 750;
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .e2a-review-options button small {
-  margin-top: 2px;
-  color: #94a3b8;
-  font-size: 12px;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .e2a-review-reason {
   display: block;
-  margin-top: 20px;
+  margin-top: 24px;
 }
 
 .e2a-review-reason > span,
@@ -557,8 +561,8 @@
   display: block;
   margin-bottom: 9px;
   color: #0f172a;
-  font-size: 13px;
-  font-weight: 750;
+  font-size: 16px;
+  font-weight: 800;
 }
 
 .e2a-review-reason textarea,
@@ -572,13 +576,13 @@
   background: #fff;
   color: #334155;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.65;
 }
 
 .e2a-review-reason textarea {
-  min-height: 112px;
-  padding: 12px 13px;
+  min-height: 126px;
+  padding: 15px 16px;
 }
 
 .e2a-review-reason textarea:focus,
@@ -594,6 +598,10 @@
   gap: 12px;
   margin-top: auto;
   padding-top: 22px;
+}
+
+.e2a-review-judgment .e2a-review-form-actions {
+  margin-top: 18px;
 }
 
 .e2a-review-form-actions .btn-primary-sm {
@@ -950,6 +958,10 @@
   .e2a-action-selection,
   .e2a-action-form {
     padding: 18px;
+  }
+
+  .e2a-review-judgment {
+    padding: 22px 18px 24px;
   }
 
   .e2a-review-video {

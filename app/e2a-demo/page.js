@@ -140,6 +140,18 @@ export default function E2ADemoPage() {
             <div className="analysis-main-v2 e2a-review-main">
                 {stage === "review" ? (
                     <section className="e2a-review-workbench">
+                            <div className="e2a-review-feedback-list" role="tablist" aria-label="검토할 피드백">
+                                {FEEDBACK.map((item, index) => {
+                                    const isComplete = Boolean(decisions[item.id]?.value && decisions[item.id]?.reason.trim());
+                                    return (
+                                        <button key={item.id} type="button" role="tab" aria-selected={index === activeIndex} className={index === activeIndex ? "active" : ""} onClick={() => selectFeedback(index)}>
+                                            <span>{isComplete ? <CheckIcon /> : index + 1}</span>
+                                            <div><small>{item.area}</small><strong>{item.title}</strong></div>
+                                            <time>{item.time}</time>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                             <div className="e2a-review-media">
                                 <div className="e2a-review-video" aria-label={`발표 영상 ${active.time} 구간`}>
                                     <video ref={videoRef} src={VIDEO_URL} controls preload="metadata" playsInline />
@@ -147,23 +159,11 @@ export default function E2ADemoPage() {
                                 </div>
                             </div>
 
-                            <form className="e2a-review-form" onSubmit={(event) => event.preventDefault()}>
+                            <div className="e2a-review-form">
                                 <header>
                                     <div><span>AI 분석 · {active.area}</span><h3>{active.title}</h3></div>
                                     <small><strong>{completed}</strong> / {FEEDBACK.length} 검토</small>
                                 </header>
-                                <div className="e2a-review-feedback-list" role="tablist" aria-label="검토할 피드백">
-                                    {FEEDBACK.map((item, index) => {
-                                        const isComplete = Boolean(decisions[item.id]?.value && decisions[item.id]?.reason.trim());
-                                        return (
-                                            <button key={item.id} type="button" role="tab" aria-selected={index === activeIndex} className={index === activeIndex ? "active" : ""} onClick={() => selectFeedback(index)}>
-                                                <span>{isComplete ? <CheckIcon /> : index + 1}</span>
-                                                <div><small>{item.area}</small><strong>{item.title}</strong></div>
-                                                <time>{item.time}</time>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
                                 <div className="e2a-review-evidence">
                                     <div className="e2a-review-evidence-heading">
                                         <div><small>관찰된 사실</small><strong>영상에서 확인된 장면 <time>{active.time}</time></strong></div>
@@ -180,7 +180,9 @@ export default function E2ADemoPage() {
                                     <small>AI의 판단</small><p>{active.comment}</p>
                                     <p className="e2a-review-suggestion"><strong>개선 제안</strong>{active.suggestion}</p>
                                 </div>
+                            </div>
 
+                            <form className="e2a-review-judgment" onSubmit={(event) => event.preventDefault()}>
                                 <fieldset className="e2a-review-options">
                                     <legend>이 피드백을 어떻게 판단하나요?</legend>
                                     {OPTIONS.map((option) => (
@@ -197,9 +199,9 @@ export default function E2ADemoPage() {
                                 </label>
 
                                 <footer className="e2a-review-form-actions">
-                                    {activeIndex > 0 ? <button type="button" className="e2a-review-secondary" onClick={() => setActiveIndex((index) => index - 1)}>이전 피드백</button> : <span />}
+                                    {activeIndex > 0 ? <button type="button" className="e2a-review-secondary" onClick={() => selectFeedback(activeIndex - 1)}>이전 피드백</button> : <span />}
                                     {activeIndex < FEEDBACK.length - 1
-                                        ? <button type="button" className="btn-primary-sm" onClick={() => setActiveIndex((index) => index + 1)}>다음 피드백</button>
+                                        ? <button type="button" className="btn-primary-sm" onClick={() => selectFeedback(activeIndex + 1)}>다음 피드백</button>
                                         : <button type="button" className="btn-primary-sm" onClick={openActionStage} disabled={!usableFeedback.length}>개선 행동 선택</button>}
                                 </footer>
                             </form>
