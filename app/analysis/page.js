@@ -1054,8 +1054,8 @@ export default function AnalysisPage() {
 
     const getFeedbackScoreTone = (score) => {
         if (score == null) return "empty";
-        if (score >= 4) return "high";
-        if (score >= 3) return "mid";
+        if (score >= 3.5) return "high";
+        if (score >= 2.5) return "mid";
         return "low";
     };
 
@@ -1614,7 +1614,7 @@ export default function AnalysisPage() {
                                                     <strong>{category.label}</strong>
                                                 </span>
                                                 <b className={`feedback-score-tone-${getFeedbackScoreTone(categoryScore)}`}>
-                                                    {categoryScore ?? "-"}{categoryScore != null && <small>/ 5</small>}
+                                                    {categoryScore ?? "-"}{categoryScore != null && <small>/ 4</small>}
                                                 </b>
                                             </button>
                                         );
@@ -1642,7 +1642,7 @@ export default function AnalysisPage() {
                                                         <small>{item.desc}</small>
                                                     </span>
                                                     <span className={`feedback-score-value feedback-score-tone-${getFeedbackScoreTone(score)}`}>
-                                                        {score ?? "-"}{score != null && <small>/ 5</small>}
+                                                        {score ?? "-"}{score != null && <small>/ 4</small>}
                                                     </span>
                                                 </button>
                                             );

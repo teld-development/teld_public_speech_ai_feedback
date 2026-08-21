@@ -371,11 +371,11 @@ export default function FeedbackDemoPage() {
                                                     <h4>{selectedItem.label}</h4>
                                                     <span className="feedback-area-desc">{selectedItem.desc}</span>
                                                 </div>
-                                                <div className="score-badge" data-score={feedback.score} title={`${feedback.score}/5점`}>
+                                                <div className="score-badge" data-score={feedback.score} title={`${feedback.score}/4점`}>
                                                     {[1, 2, 3, 4, 5].map((score) => (
                                                         <span key={score} className={`score-dot ${score <= feedback.score ? "filled" : ""}`} />
                                                     ))}
-                                                    <span className="score-value">{feedback.score}<span className="score-max">/5</span></span>
+                                                    <span className="score-value">{feedback.score}<span className="score-max">/4</span></span>
                                                 </div>
                                             </div>
 
