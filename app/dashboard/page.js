@@ -12,6 +12,17 @@ import "./dashboard.css";
 
 const URGENT_DAYS = 3;
 
+const FILTERS = [
+    { id: "remaining", label: "남은 발표" },
+    { id: "past", label: "지난 발표" },
+    { id: "all", label: "전체" },
+];
+
+const FILTER_EMPTY_TEXT = {
+    remaining: "남은 발표가 없습니다. 새 발표를 등록해 보세요.",
+    past: "아직 지난 발표가 없습니다.",
+};
+
 const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
     month: "long",
     day: "numeric",
@@ -73,6 +84,7 @@ export default function DashboardPage() {
     const [deletingPresentationId, setDeletingPresentationId] = useState("");
     const [sessionModal, setSessionModal] = useState(null);
     const [error, setError] = useState("");
+    const [filter, setFilter] = useState("remaining");
 
     useEffect(() => {
         if (!authLoading && !user) {
@@ -123,7 +135,7 @@ export default function DashboardPage() {
     }, [accountMenuOpen]);
 
     // 다가오는 발표(가까운 순) → 날짜 미정 → 지난 발표(최근 순)
-    const { cards, nextUp } = useMemo(() => {
+    const { cards, remaining, past, nextUp } = useMemo(() => {
         const items = presentations
             .filter((item) => item.status !== "archived")
             .map((item) => ({ ...item, daysLeft: getDaysLeft(item.dday) }));
@@ -138,6 +150,8 @@ export default function DashboardPage() {
 
         return {
             cards: [...upcoming, ...undated, ...past],
+            remaining: [...upcoming, ...undated],
+            past,
             nextUp: upcoming[0] || null,
         };
     }, [presentations]);
@@ -192,6 +206,8 @@ export default function DashboardPage() {
 
     const accountLabel = user.email || "내 계정";
     const hasCards = cards.length > 0;
+    const filteredCards = filter === "remaining" ? remaining : filter === "past" ? past : cards;
+    const showAddCard = filter !== "past";
 
     const renderNextPanel = () => {
         if (nextUp) {
@@ -379,15 +395,38 @@ export default function DashboardPage() {
                             <li><div className="dh-skeleton" /></li>
                         </ul>
                     ) : hasCards && (
-                        <ul className="dh-grid">
-                            {cards.map(renderCard)}
-                            <li>
-                                <button type="button" className="dh-card-add" onClick={openCreateModal}>
-                                    <span className="dh-card-add-plus"><PlusIcon size={16} /></span>
-                                    새 발표 추가
-                                </button>
-                            </li>
-                        </ul>
+                        <section className="dh-list" aria-label="발표 목록">
+                            <div className="dh-filter" role="tablist" aria-label="발표 필터">
+                                {FILTERS.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={filter === item.id}
+                                        className="dh-filter-btn"
+                                        onClick={() => setFilter(item.id)}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {filteredCards.length === 0 && !showAddCard ? (
+                                <p className="dh-filter-empty">{FILTER_EMPTY_TEXT[filter]}</p>
+                            ) : (
+                                <ul className="dh-grid">
+                                    {filteredCards.map(renderCard)}
+                                    {showAddCard && (
+                                        <li>
+                                            <button type="button" className="dh-card-add" onClick={openCreateModal}>
+                                                <span className="dh-card-add-plus"><PlusIcon size={16} /></span>
+                                                새 발표 추가
+                                            </button>
+                                        </li>
+                                    )}
+                                </ul>
+                            )}
+                        </section>
                     )}
                 </main>
             </div>

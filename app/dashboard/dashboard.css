@@ -319,6 +319,60 @@
   transform: translateX(2px);
 }
 
+/* ── 필터 ── */
+.dh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dh-filter {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--dh-line);
+  border-radius: 10px;
+  background: var(--dh-surface);
+}
+
+.dh-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--dh-ink-2);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.dh-filter-btn:hover {
+  background: var(--dh-fill);
+  color: var(--dh-ink);
+}
+
+.dh-filter-btn[aria-selected="true"] {
+  background: var(--dh-accent-tint);
+  color: var(--dh-accent-ink);
+}
+
+.dh-filter-empty {
+  margin: 0;
+  padding: 40px 20px;
+  border: 1px dashed #9c9ea5;
+  border-radius: var(--dh-radius-card);
+  color: var(--dh-ink-2);
+  font-size: 14px;
+  text-align: center;
+}
+
 /* ── 카드 ── */
 .dh-grid {
   display: grid;
