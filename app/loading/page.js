@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/AuthProvider";
 import { doc, getDoc } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from "firebase/storage";
-import { httpsCallable } from "firebase/functions";
-import { db, functions, storage } from "../lib/firebase";
+import { db, storage } from "../lib/firebase";
 import { completePresentationAttempt, failPresentationAttempt, markAttemptAnalyzing } from "../lib/presentations";
 import { readJsonResponse } from "../lib/httpResponse";
+import { engineErrorMessage, engineUrl, postEngineJson } from "../lib/engineApi";
 
 // IndexedDB 유틸리티
 const DB_NAME = "VideoAnalysisDB";
@@ -68,6 +68,13 @@ async function getAttemptAnalysisResult(user, presentationId, attemptId) {
     return extractAnalysisResult(attempt);
 }
 
+async function getAttemptData(user, presentationId, attemptId) {
+    if (!user?.uid || !presentationId || !attemptId) return null;
+    const attemptRef = doc(db, "users", user.uid, "presentations", presentationId, "attempts", attemptId);
+    const attemptSnap = await getDoc(attemptRef);
+    return attemptSnap.exists() ? attemptSnap.data() : null;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isAnalysisResult(value) {
@@ -97,9 +104,6 @@ async function resolveStorageFunctionAnalysis(user, presentationId, attemptId, i
     let payload = initialData || {};
     const startedAt = Date.now();
     let pollCount = 0;
-    const resumeAnalysis = httpsCallable(functions, "resumePresentationAnalysis", {
-        timeout: 540000,
-    });
 
     while (Date.now() - startedAt < ANALYSIS_POLL_MAX_MS) {
         const payloadResult = extractAnalysisResult(payload);
@@ -110,8 +114,24 @@ async function resolveStorageFunctionAnalysis(user, presentationId, attemptId, i
 
         onPending?.(payload, pollCount);
         await sleep(ANALYSIS_POLL_INTERVAL_MS);
-        const resumed = await resumeAnalysis({ presentationId, attemptId });
-        payload = resumed.data || {};
+        try {
+            payload = await postEngineJson("/resumePresentationAnalysis", { presentationId, attemptId }, {
+                user,
+                fallbackMessage: "분석 이어받기에 실패했습니다.",
+            });
+        } catch (err) {
+            const attempt = await getAttemptData(user, presentationId, attemptId);
+            if (attempt?.status === "completed") {
+                const result = extractAnalysisResult(attempt);
+                if (result) return result;
+            }
+            if (attempt?.status === "analyzing") {
+                payload = { pending: true, stage: attempt.analysisStage || "analyzing", retrying: true };
+                pollCount += 1;
+                continue;
+            }
+            throw err;
+        }
         pollCount += 1;
     }
 
@@ -224,7 +244,7 @@ export default function LoadingPage() {
                         if (!file) throw new Error("업로드할 영상 파일을 찾을 수 없습니다.");
                         blobResult = await new Promise((resolve, reject) => {
                             const xhr = new XMLHttpRequest();
-                            xhr.open('POST', `/api/upload-blob?filename=${encodeURIComponent(file.name)}`);
+                            xhr.open('POST', engineUrl(`/upload-blob?filename=${encodeURIComponent(file.name)}`));
                             xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
                             xhr.upload.addEventListener('progress', (e) => {
                                 if (e.lengthComputable) {
@@ -284,7 +304,7 @@ export default function LoadingPage() {
                         const materialFile = new File([materialBlob], prepareData.presentationMaterial.name, { type: prepareData.presentationMaterial.type });
 
                         const matResponse = await fetch(
-                            `/api/upload-blob?filename=${encodeURIComponent(materialFile.name)}`,
+                            engineUrl(`/upload-blob?filename=${encodeURIComponent(materialFile.name)}`),
                             {
                                 method: 'POST',
                                 headers: { 'Content-Type': materialFile.type || 'application/pdf' },
@@ -318,15 +338,12 @@ export default function LoadingPage() {
                 }, 1000);
 
                 const storagePath = blobResult.storagePath || recordingUpload?.rawVideoPath || "";
-                const canUseStorageFunction = Boolean(functions && presentationId && attemptId && storagePath);
+                const canUseStorageFunction = Boolean(user && presentationId && attemptId && storagePath);
                 let analysisResult = null;
                 let analysisCompletedByFunction = false;
 
                 if (canUseStorageFunction) {
-                    const analyzeFromStorage = httpsCallable(functions, "analyzePresentationFromStorage", {
-                        timeout: 540000,
-                    });
-                    const callableResult = await analyzeFromStorage({
+                    const callableResult = await postEngineJson("/analyzePresentationFromStorage", {
                         presentationId,
                         attemptId,
                         video: {
@@ -348,12 +365,15 @@ export default function LoadingPage() {
                         duration: prepareData.duration || "",
                         feedbackItems: prepareData.feedbackItems || [],
                         conditions: prepareData.conditions || [],
+                    }, {
+                        user,
+                        fallbackMessage: "분석 시작에 실패했습니다.",
                     });
                     analysisResult = await resolveStorageFunctionAnalysis(
                         user,
                         presentationId,
                         attemptId,
-                        callableResult.data || {},
+                        callableResult || {},
                         (payload, pollCount) => {
                             if (payload.stage === "transcribing") {
                                 setCurrentStep(2);
@@ -363,7 +383,7 @@ export default function LoadingPage() {
                     );
                     analysisCompletedByFunction = true;
                 } else {
-                    const analyzeResponse = await fetch("/api/analyze", {
+                    const analyzeResponse = await fetch(engineUrl("/analyze"), {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
@@ -385,7 +405,7 @@ export default function LoadingPage() {
 
                     analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
                     if (!analyzeResponse.ok) {
-                        throw new Error(analysisResult?.error || "분석에 실패했습니다.");
+                        throw new Error(engineErrorMessage(analysisResult, "분석에 실패했습니다."));
                     }
                 }
 

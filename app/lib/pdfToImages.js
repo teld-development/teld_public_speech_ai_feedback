@@ -9,6 +9,14 @@
 import { storage } from "./firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
+const PDFJS_VERSION = "4.10.38";
+
+async function loadPdfJs() {
+    const pdfjsLib = await import(/* webpackIgnore: true */ `/pdf.min.mjs?v=${PDFJS_VERSION}`);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs?v=${PDFJS_VERSION}`;
+    return pdfjsLib;
+}
+
 /**
  * 일시적 실패(네트워크·렌더 hiccup)에 견디도록 fn 을 최대 tries 번 재시도.
  * 모든 시도 실패 시 마지막 에러를 throw (호출부에서 all-or-nothing 처리).
@@ -58,10 +66,7 @@ async function renderPageToBlob(pdf, pageNum, scale) {
  * @returns {Promise<Blob[]>} 페이지별 PNG Blob 배열
  */
 export async function pdfToImageBlobs(pdfBytes, { scale = 1.5, onProgress } = {}) {
-    // ★ 동적 import: Next.js SSR에서 window 참조 에러 방지
-    const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
-    // 워커 경로 설정 (public 폴더에 미리 복사해 둠)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    const pdfjsLib = await loadPdfJs();
 
     const data = pdfBytes instanceof ArrayBuffer ? new Uint8Array(pdfBytes) : pdfBytes;
     const loadingTask = pdfjsLib.getDocument({ data });

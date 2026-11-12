@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, getDoc, onSnapshot, updateDoc } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
-import { db, functions, storage } from "../../lib/firebase";
+import { db, storage } from "../../lib/firebase";
 import { useAuth } from "../../lib/AuthProvider";
 import { readJsonResponse } from "../../lib/httpResponse";
+import { engineErrorMessage, engineUrl, postEngineJson } from "../../lib/engineApi";
 import {
     completePresentationAttempt,
     deletePresentationAttempt,
@@ -60,9 +60,6 @@ function extractAnalysisResult(payload) {
 async function resolveStorageFunctionAnalysis(user, presentationId, attemptId, initialData) {
     let payload = initialData || {};
     const startedAt = Date.now();
-    const resumeAnalysis = httpsCallable(functions, "resumePresentationAnalysis", {
-        timeout: 540000,
-    });
 
     while (Date.now() - startedAt < ANALYSIS_POLL_MAX_MS) {
         const payloadResult = extractAnalysisResult(payload);
@@ -72,8 +69,10 @@ async function resolveStorageFunctionAnalysis(user, presentationId, attemptId, i
         if (storedResult) return storedResult;
 
         await sleep(ANALYSIS_POLL_INTERVAL_MS);
-        const resumed = await resumeAnalysis({ presentationId, attemptId });
-        payload = resumed.data || {};
+        payload = await postEngineJson("/resumePresentationAnalysis", { presentationId, attemptId }, {
+            user,
+            fallbackMessage: "분석 이어받기에 실패했습니다.",
+        });
     }
 
     const storedResult = await getAttemptAnalysisResult(user, presentationId, attemptId);
@@ -154,7 +153,7 @@ export default function SimulationWaitingPage({ params }) {
                             }
 
                             const canUseStorageFunction = Boolean(
-                                functions &&
+                                user &&
                                 data.presentationId &&
                                 data.attemptId &&
                                 unityRaw.storagePath
@@ -163,10 +162,7 @@ export default function SimulationWaitingPage({ params }) {
                             let analysisCompletedByFunction = false;
 
                             if (canUseStorageFunction) {
-                                const analyzeFromStorage = httpsCallable(functions, "analyzePresentationFromStorage", {
-                                    timeout: 540000,
-                                });
-                                const callableResult = await analyzeFromStorage({
+                                const callableResult = await postEngineJson("/analyzePresentationFromStorage", {
                                     presentationId: data.presentationId,
                                     attemptId: data.attemptId,
                                     video: {
@@ -192,16 +188,19 @@ export default function SimulationWaitingPage({ params }) {
                                         code,
                                         backendSessionId: data.backendSessionId || "",
                                     },
+                                }, {
+                                    user,
+                                    fallbackMessage: "분석 시작에 실패했습니다.",
                                 });
                                 analysisResult = await resolveStorageFunctionAnalysis(
                                     user,
                                     data.presentationId,
                                     data.attemptId,
-                                    callableResult.data || {}
+                                    callableResult || {}
                                 );
                                 analysisCompletedByFunction = true;
                             } else {
-                                const analyzeResponse = await fetch("/api/analyze", {
+                                const analyzeResponse = await fetch(engineUrl("/analyze"), {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({
@@ -221,7 +220,7 @@ export default function SimulationWaitingPage({ params }) {
 
                                 analysisResult = await readJsonResponse(analyzeResponse, "분석에 실패했습니다.");
                                 if (!analyzeResponse.ok) {
-                                    throw new Error(analysisResult?.error || "분석에 실패했습니다.");
+                                    throw new Error(engineErrorMessage(analysisResult, "분석에 실패했습니다."));
                                 }
                             }
 

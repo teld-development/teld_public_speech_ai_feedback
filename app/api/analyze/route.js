@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS } from "../../lib/feedbackAreas";
+import { FEEDBACK_CATEGORIES, FEEDBACK_ITEMS_BY_ID, ALL_ITEM_IDS, normalizeFeedbackItemIds } from "../../lib/feedbackAreas";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
@@ -627,7 +627,7 @@ export async function POST(request) {
 
         // ── 분석 대상 카테고리/항목 결정 ─────────────────────────────────────
         const activeItemIds = feedbackItems.length > 0
-            ? feedbackItems.filter((id) => FEEDBACK_ITEMS_BY_ID[id])
+            ? normalizeFeedbackItemIds(feedbackItems)
             : ALL_ITEM_IDS;
 
         const activeCategories = FEEDBACK_CATEGORIES

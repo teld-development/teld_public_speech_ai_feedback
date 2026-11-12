@@ -1,4 +1,4 @@
-// 발표 피드백 영역 정의 (3대 영역, 16개 하위 영역)
+// 발표 피드백 영역 정의 (제공된 평가표 기준 12개 소영역)
 
 export const FEEDBACK_CATEGORIES = [
     {
@@ -7,10 +7,9 @@ export const FEEDBACK_CATEGORIES = [
         shortLabel: "내용",
         icon: "📘",
         items: [
-            { id: "topic_relevance", label: "주제 적절성", desc: "청중과 발표 상황에 적절한 주제를 선정하였다." },
-            { id: "vocabulary_expression", label: "어휘 및 표현 적절성", desc: "상황과 맥락에 적절한 어휘를 선택하여 표현하였다." },
-            { id: "grammar_accuracy", label: "문법 및 언어 정확성", desc: "어법과 문법에 맞게 표현하였다." },
-            { id: "audience_customization", label: "청중 맞춤성", desc: "청중의 수준과 특성을 고려하여 발표 내용을 효과적으로 조정하였다." },
+            { id: "topic_relevance", label: "주제 적절성", desc: "발표의 목적을 고려하여 주제를 적절히 선정하였다." },
+            { id: "presentation_content", label: "발표 내용의 적절성", desc: "발표 주제에 대해 적절한 핵심 내용을 제시하였다." },
+            { id: "examples_appropriateness", label: "사례와 예시의 적절성", desc: "적절한 사례나 예시를 제시하였다." },
         ],
     },
     {
@@ -19,26 +18,23 @@ export const FEEDBACK_CATEGORIES = [
         shortLabel: "조직",
         icon: "🧭",
         items: [
-            { id: "intro_structure", label: "도입 구성", desc: "청중이 발표 주제와 발표자에 대해 이해할 수 있도록 도입을 구성하였다." },
-            { id: "organization_flow", label: "내용 조직 및 흐름", desc: "내용 간 연결이 자연스럽고 체계적인 조직 구조를 활용하였다." },
-            { id: "sentence_clarity", label: "문장 완결성 및 명료성", desc: "한 가지 생각이나 내용을 완결된 문장으로 명확하게 전달하였다." },
-            { id: "conclusion_structure", label: "결론 구성", desc: "논지를 강화하고 청중이 발표의 마무리를 명확히 인식할 수 있도록 결론을 구성하였다." },
+            { id: "presentation_structure", label: "발표 구조의 완결성", desc: "도입·전개·마무리의 구조를 갖추어 내용을 조직하였다." },
+            { id: "paragraph_connection", label: "단락 간 연결의 유기성", desc: "단락과 단락이 유기적으로 연결되었다." },
+            { id: "explanation_method", label: "설명 방식의 적절성", desc: "적절한 설명 방식을 사용하였다(예: 원인/결과, 문제/해결, 비교, 대조, 분류, 분석)." },
         ],
     },
     {
         id: "expression",
-        label: "표현",
-        shortLabel: "표현",
+        label: "표현 및 전달",
+        shortLabel: "표현 및 전달",
         icon: "🎙️",
         items: [
-            { id: "vocal_expression", label: "음성 표현", desc: "음성 표현과 준언어적 요소(억양, 속도, 강세 등)를 효과적으로 활용하였다." },
-            { id: "nonverbal_expression", label: "비언어적 표현", desc: "언어적 메시지를 보완하는 비언어적 행동을 적절히 활용하였다." },
-            { id: "eye_contact", label: "시선 처리", desc: "청중과 적절한 시선 접촉을 유지하였다." },
-            { id: "pronunciation_fluency", label: "발음 및 말하기 유창성", desc: "발음과 말하기 속도가 적절하며 매끄럽게 말하였다." },
-            { id: "gesture_movement", label: "몸짓 및 움직임", desc: "전달 내용을 효과적으로 지원하는 움직임과 몸짓을 활용하였다." },
-            { id: "attitude_attire", label: "태도 및 복장", desc: "발표 상황과 맥락에 적절한 복장과 태도를 유지하였다." },
-            { id: "movement_control", label: "불필요한 움직임 통제", desc: "산만하거나 불필요한 신체 움직임을 보이지 않았다." },
-            { id: "media_use", label: "매체 활용", desc: "기술 및 매체를 발표 목적에 맞게 적절히 활용하였다." },
+            { id: "vocabulary_selection", label: "어휘 선택의 적절성", desc: "청중과 발표 목적에 맞는 적절한 어휘를 사용하였다." },
+            { id: "paralinguistic_expression", label: "준언어적 표현의 효과적 활용", desc: "준언어적 요소(억양, 속도, 강세 등)를 효과적으로 활용하였다." },
+            { id: "presentation_fluency", label: "발표의 유창성", desc: "말의 흐름이 자연스럽고 원활하였다." },
+            { id: "nonverbal_expression", label: "비언어적 표현의 효과적 활용", desc: "비언어적 행동(표정, 자세, 몸짓)을 효과적으로 활용하였다." },
+            { id: "eye_contact", label: "시선 처리의 지속성", desc: "청중과 시선을 골고루 맞추었다." },
+            { id: "presentation_materials", label: "발표 자료의 적절성", desc: "발표자료가 발표 내용과 잘 부합하며, 이를 뒷받침하는 시각 자료(차트, 표, 사진 등)가 제시됨." },
         ],
     },
 ];
@@ -52,6 +48,45 @@ export const FEEDBACK_ITEMS_BY_ID = FEEDBACK_CATEGORIES.reduce((acc, cat) => {
 }, {});
 
 export const ALL_ITEM_IDS = Object.keys(FEEDBACK_ITEMS_BY_ID);
+
+// 이전 16개 영역으로 저장된 결과를 현재 12개 평가표에 표시하기 위한 대응표.
+export const LEGACY_ITEM_ID_TO_CURRENT_ID = {
+    vocabulary_expression: "vocabulary_selection",
+    grammar_accuracy: "presentation_content",
+    audience_customization: "presentation_content",
+    intro_structure: "presentation_structure",
+    organization_flow: "paragraph_connection",
+    sentence_clarity: "explanation_method",
+    conclusion_structure: "presentation_structure",
+    vocal_expression: "paralinguistic_expression",
+    pronunciation_fluency: "presentation_fluency",
+    gesture_movement: "nonverbal_expression",
+    attitude_attire: "nonverbal_expression",
+    movement_control: "nonverbal_expression",
+    media_use: "presentation_materials",
+};
+
+export const LEGACY_ITEM_LABELS = {
+    vocabulary_expression: "어휘 및 표현 적절성",
+    grammar_accuracy: "문법 및 언어 정확성",
+    audience_customization: "청중 맞춤성",
+    intro_structure: "도입 구성",
+    organization_flow: "내용 조직 및 흐름",
+    sentence_clarity: "문장 완결성 및 명료성",
+    conclusion_structure: "결론 구성",
+    vocal_expression: "음성 표현",
+    pronunciation_fluency: "발음 및 말하기 유창성",
+    gesture_movement: "몸짓 및 움직임",
+    attitude_attire: "태도 및 복장",
+    movement_control: "불필요한 움직임 통제",
+    media_use: "매체 활용",
+};
+
+export function normalizeFeedbackItemIds(ids = []) {
+    return [...new Set((Array.isArray(ids) ? ids : [])
+        .map((id) => FEEDBACK_ITEMS_BY_ID[id] ? id : LEGACY_ITEM_ID_TO_CURRENT_ID[id])
+        .filter(Boolean))];
+}
 
 export function buildEmptyCategoryAverages() {
     return FEEDBACK_CATEGORIES.reduce((acc, category) => {
