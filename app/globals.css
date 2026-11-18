@@ -2489,6 +2489,17 @@ a {
   text-align: center;
 }
 
+.auth-link {
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-link:hover {
+  color: var(--accent-hover);
+}
+
 .error {
   margin-top: 16px;
   padding: 14px 18px;
@@ -6622,6 +6633,70 @@ a {
   color: #2563eb;
   font-size: 11px;
   font-weight: 800;
+}
+
+/* 질의응답 피드백: 질문에 답했는지 판정 칩 */
+.qa-card-meta small.qa-relevance-direct {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.qa-card-meta small.qa-relevance-partial {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.qa-card-meta small.qa-relevance-off_topic {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.qa-card-meta small.qa-relevance-none {
+  border-color: #e5e7eb;
+  background: #f9fafb;
+  color: #4b5563;
+}
+
+.qa-feedback-block p.qa-feedback-loading {
+  animation: qaFeedbackPulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes qaFeedbackPulse {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+
+.qa-feedback-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.qa-feedback-error button {
+  flex: none;
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.qa-feedback-error button:hover {
+  background: #f3f4f6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qa-feedback-block p.qa-feedback-loading {
+    animation: none;
+  }
 }
 
 .qa-question-block,

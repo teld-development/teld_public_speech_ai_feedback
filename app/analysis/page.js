@@ -15,6 +15,7 @@ import {
 } from "../lib/feedbackAreas";
 import PresentationDataVisuals from "../components/PresentationDataVisuals";
 import { engineErrorMessage, engineUrl } from "../lib/engineApi";
+import { QA_RELEVANCE_LABELS, normalizeQaFeedback } from "../lib/qaFeedback";
 
 const PDFJS_VERSION = "4.10.38";
 
@@ -178,20 +179,6 @@ function SummaryFeedbackItem({ item }) {
     );
 }
 
-function parseQaFeedbackText(value) {
-    const text = String(value || "").trim();
-    if (!text) return { strength: "", improvement: "", overall: "" };
-
-    const strength = text.match(/잘한\s*점\s*:\s*([\s\S]*?)(?=\s*개선점\s*:|$)/)?.[1]?.trim() || "";
-    const improvement = text.match(/개선점\s*:\s*([\s\S]*)$/)?.[1]?.trim() || "";
-
-    return {
-        strength,
-        improvement,
-        overall: strength || improvement ? "" : text,
-    };
-}
-
 function QaFeedbackIcon({ type }) {
     if (type === "strength") {
         return (
@@ -209,13 +196,17 @@ function QaFeedbackIcon({ type }) {
     );
 }
 
-function QaFeedbackPreview({ feedback, onOpen }) {
-    const { strength, improvement, overall } = parseQaFeedbackText(feedback);
-    const sections = [
-        strength && { type: "strength", label: "잘한 점", text: strength },
-        improvement && { type: "improvement", label: "개선점", text: improvement },
-        overall && { type: "overall", label: "피드백", text: overall },
+function qaFeedbackSections(feedback) {
+    if (!feedback) return [];
+    return [
+        feedback.strength && { type: "strength", label: "잘한 점", text: feedback.strength },
+        feedback.improvement && { type: "improvement", label: feedback.answered === false ? "다음에 해 볼 것" : "개선점", text: feedback.improvement },
+        !feedback.strength && !feedback.improvement && feedback.overall && { type: "overall", label: "피드백", text: feedback.overall },
     ].filter(Boolean);
+}
+
+function QaFeedbackPreview({ feedback, onOpen }) {
+    const sections = qaFeedbackSections(feedback);
 
     return (
         <div className="qa-feedback-preview">
@@ -241,40 +232,29 @@ function QaFeedbackPreview({ feedback, onOpen }) {
 }
 
 function QaFeedbackDetail({ feedback }) {
-    const { strength, improvement, overall } = parseQaFeedbackText(feedback);
-
-    if (overall) {
-        return (
-            <section className="qa-feedback-detail-section overall">
-                <div className="qa-feedback-detail-heading">
-                    <span className="qa-feedback-preview-icon"><QaFeedbackIcon type="overall" /></span>
-                    <h3>AI 피드백</h3>
-                </div>
-                <p>{overall}</p>
-            </section>
-        );
-    }
+    const sections = qaFeedbackSections(feedback);
+    const showOverall = feedback?.overall && sections.every((section) => section.type !== "overall");
 
     return (
         <div className="qa-feedback-detail-sections">
-            {strength && (
-                <section className="qa-feedback-detail-section strength">
+            {showOverall && (
+                <section className="qa-feedback-detail-section overall">
                     <div className="qa-feedback-detail-heading">
-                        <span className="qa-feedback-preview-icon"><QaFeedbackIcon type="strength" /></span>
-                        <h3>잘한 점</h3>
+                        <span className="qa-feedback-preview-icon"><QaFeedbackIcon type="overall" /></span>
+                        <h3>한 줄 총평</h3>
                     </div>
-                    <p>{strength}</p>
+                    <p>{feedback.overall}</p>
                 </section>
             )}
-            {improvement && (
-                <section className="qa-feedback-detail-section improvement">
+            {sections.map((section) => (
+                <section key={section.type} className={`qa-feedback-detail-section ${section.type}`}>
                     <div className="qa-feedback-detail-heading">
-                        <span className="qa-feedback-preview-icon"><QaFeedbackIcon type="improvement" /></span>
-                        <h3>개선점</h3>
+                        <span className="qa-feedback-preview-icon"><QaFeedbackIcon type={section.type} /></span>
+                        <h3>{section.label}</h3>
                     </div>
-                    <p>{improvement}</p>
+                    <p>{section.text}</p>
                 </section>
-            )}
+            ))}
         </div>
     );
 }
@@ -551,19 +531,18 @@ function normalizeQaItem(item = {}, index = 0, companion = {}) {
             ?? companion.answerText
             ?? companion.answer
         ),
-        aiFeedback: firstText(
-            item.aiFeedback,
-            item.feedbackText,
-            item.feedback,
-            item.evaluation,
-            item.comment,
-            feedbackSource.text,
-            feedbackSource.summary,
-            companion.aiFeedback,
-            companion.feedbackText,
-            companion.feedback
+        aiFeedback: normalizeQaFeedback(
+            item.aiFeedback
+            ?? item.feedbackText
+            ?? item.feedback
+            ?? item.evaluation
+            ?? item.comment
+            ?? companion.aiFeedback
+            ?? companion.feedbackText
+            ?? companion.feedback
         ),
         type: firstText(item.type, item.questionType, companion.type),
+        rowIndex: index,
         target: firstText(item.targetStudentIndex, item.studentIndex, item.studentId, companion.targetStudentIndex),
         chunkIndex: firstText(item.chunkIndex, companion.chunkIndex),
     };
@@ -722,6 +701,9 @@ export default function AnalysisPage() {
     const [videoCurrentSeconds, setVideoCurrentSeconds] = useState(0);
     const [slideDeck, setSlideDeck] = useState(() => buildSlideDeckFromSimulation());
     const [qaPanel, setQaPanel] = useState({ items: [], loading: false, error: "" });
+    const [qaSource, setQaSource] = useState(null);
+    const [qaFeedbackStatus, setQaFeedbackStatus] = useState({});
+    const qaFeedbackRequestedRef = useRef(new Set());
 
     useEffect(() => {
         const savedResult = sessionStorage.getItem("analysisResult");
@@ -782,6 +764,7 @@ export default function AnalysisPage() {
         if (!simulationCode) {
             setSlideDeck(localDeck);
             setQaPanel({ items: localQaItems, loading: false, error: "" });
+            setQaSource(null);
             return undefined;
         }
 
@@ -799,6 +782,15 @@ export default function AnalysisPage() {
                     : buildSlideDeckFromSimulation();
                 const remoteQaItems = normalizeQaResults(remoteData?.qaResults);
                 setSlideDeck(mergeSlideDecks(remoteDeck, localDeck));
+                setQaSource({
+                    code: simulationCode,
+                    canSave: Array.isArray(remoteData?.qaResults) && remoteQaItems.length > 0,
+                    presentation: {
+                        title: remoteData?.title || remoteData?.presentation?.title || "",
+                        topic: remoteData?.topic || remoteData?.presentation?.topic || "",
+                        audience: remoteData?.audience || remoteData?.presentation?.audience || "",
+                    },
+                });
                 setQaPanel({
                     items: remoteQaItems.length > 0 ? remoteQaItems : localQaItems,
                     loading: false,
@@ -821,6 +813,87 @@ export default function AnalysisPage() {
             cancelled = true;
         };
     }, [analysisContext]);
+
+    const requestQaFeedback = async (targetItems) => {
+        if (!qaSource?.code || targetItems.length === 0) return;
+        const code = qaSource.code;
+        const targetIds = targetItems.map((item) => item.id);
+        setQaFeedbackStatus((prev) => ({ ...prev, ...Object.fromEntries(targetIds.map((id) => [id, "loading"])) }));
+
+        const presentationTranscript = analysisData?.transcript?.text
+            || (Array.isArray(analysisData?.transcript?.utterances)
+                ? analysisData.transcript.utterances.map((utterance) => utterance.text).filter(Boolean).join("\n")
+                : "");
+
+        try {
+            const response = await fetch("/api/qa-feedback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    presentation: qaSource.presentation,
+                    transcript: presentationTranscript,
+                    items: targetItems.map((item) => ({
+                        index: item.rowIndex,
+                        question: item.question,
+                        questionType: item.type,
+                        answer: item.answerTranscript,
+                    })),
+                }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
+
+            const results = Array.isArray(payload.items) ? payload.items : [];
+            const feedbackByRow = new Map(results.filter((row) => row.feedback).map((row) => [row.index, row.feedback]));
+
+            setQaPanel((prev) => ({
+                ...prev,
+                items: prev.items.map((item) => (
+                    feedbackByRow.has(item.rowIndex)
+                        ? { ...item, aiFeedback: normalizeQaFeedback(feedbackByRow.get(item.rowIndex)) }
+                        : item
+                )),
+            }));
+            setQaFeedbackStatus((prev) => ({
+                ...prev,
+                ...Object.fromEntries(targetItems.map((item) => [item.id, feedbackByRow.has(item.rowIndex) ? "done" : "error"])),
+            }));
+
+            // 다음에 열 때는 바로 보이도록 simulations/{code}.qaResults[i].aiFeedback 에 저장한다.
+            if (qaSource.canSave && feedbackByRow.size > 0) {
+                try {
+                    const simulationRef = doc(db, "simulations", code);
+                    const latestSnap = await getDoc(simulationRef);
+                    const latestQa = latestSnap.exists() ? latestSnap.data()?.qaResults : null;
+                    if (Array.isArray(latestQa)) {
+                        const nextQa = latestQa.map((row, rowIndex) => (
+                            feedbackByRow.has(rowIndex) && row && typeof row === "object"
+                                ? { ...row, aiFeedback: feedbackByRow.get(rowIndex) }
+                                : row
+                        ));
+                        await updateDoc(simulationRef, { qaResults: nextQa, qaFeedbackUpdatedAt: serverTimestamp() });
+                    }
+                } catch (saveErr) {
+                    console.warn("[Analysis] 질의응답 피드백 저장 실패:", saveErr);
+                }
+            }
+        } catch (err) {
+            console.error("[Analysis] 질의응답 피드백 생성 실패:", err);
+            setQaFeedbackStatus((prev) => ({ ...prev, ...Object.fromEntries(targetIds.map((id) => [id, "error"])) }));
+        }
+    };
+
+    // 질의응답을 불러왔는데 AI 피드백이 없는 질문이 있으면 한 번만 자동으로 만든다.
+    useEffect(() => {
+        if (qaPanel.loading || !qaSource?.code || !analysisData) return;
+        if (qaFeedbackRequestedRef.current.has(qaSource.code)) return;
+        const missing = qaPanel.items.filter((item) => item.question && !item.aiFeedback);
+        if (missing.length === 0) return;
+        qaFeedbackRequestedRef.current.add(qaSource.code);
+        requestQaFeedback(missing);
+        // requestQaFeedback 은 렌더마다 새로 만들어지므로 의존성에서 뺀다.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [qaPanel.loading, qaPanel.items, qaSource, analysisData]);
 
     const { timestamps = [], scores = {}, summary = {}, transcript = null } = analysisData || {};
     const transcriptUtterances = Array.isArray(transcript?.utterances) ? transcript.utterances : [];
@@ -1503,7 +1576,11 @@ export default function AnalysisPage() {
                                                 <header className="qa-card-header">
                                                     <span className="qa-index">Q{item.index}</span>
                                                     <div className="qa-card-meta">
-                                                        {item.type && <small>{item.type}</small>}
+                                                        {item.aiFeedback?.relevance && (
+                                                            <small className={`qa-relevance qa-relevance-${item.aiFeedback.relevance}`}>
+                                                                {QA_RELEVANCE_LABELS[item.aiFeedback.relevance]}
+                                                            </small>
+                                                        )}
                                                         {item.target && <small>청중 {item.target}</small>}
                                                     </div>
                                                 </header>
@@ -1549,6 +1626,13 @@ export default function AnalysisPage() {
                                                                 feedback: item.aiFeedback,
                                                             })}
                                                         />
+                                                    ) : qaFeedbackStatus[item.id] === "loading" ? (
+                                                        <p className="qa-placeholder qa-feedback-loading">AI 피드백을 만드는 중입니다…</p>
+                                                    ) : qaFeedbackStatus[item.id] === "error" ? (
+                                                        <div className="qa-feedback-error">
+                                                            <p className="qa-placeholder">피드백을 만들지 못했습니다.</p>
+                                                            <button type="button" onClick={() => requestQaFeedback([item])}>다시 시도</button>
+                                                        </div>
                                                     ) : (
                                                         <p className="qa-placeholder">AI 피드백은 아직 생성되지 않았습니다.</p>
                                                     )}

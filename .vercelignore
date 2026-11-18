@@ -18,3 +18,7 @@ storage-video-downloads/
 **/*.mp3
 **/*.m4a
 **/*.aac
+
+# Firebase/GCP 서비스 계정 키
+*firebase-adminsdk*.json
+service-account*.json

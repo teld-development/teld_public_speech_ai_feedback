@@ -1,23 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "./lib/firebase";
 import { useAuth } from "./lib/AuthProvider";
-
-function authErrorMessage(error) {
-  switch (error?.code) {
-    case "auth/invalid-credential":
-    case "auth/user-not-found":
-    case "auth/wrong-password":
-      return "이메일 또는 비밀번호가 올바르지 않습니다.";
-    case "auth/invalid-email":
-      return "이메일 형식을 확인해주세요.";
-    default:
-      return error?.message || "인증 중 오류가 발생했습니다.";
-  }
-}
+import { authErrorMessage } from "./lib/authErrors";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -64,7 +53,7 @@ export default function LoginPage() {
       <section className="card">
         <img src="/logo.png" alt="Logo" className="login-logo" />
         <h1 className="title">AI 기반 발표 피드백 시스템</h1>
-        <p className="subtitle">제공된 테스트 계정으로 로그인하세요</p>
+        <p className="subtitle">이메일 계정으로 로그인하세요</p>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label className="label" htmlFor="email">
@@ -101,7 +90,12 @@ export default function LoginPage() {
           </button>
           {error ? <p className="error">{error}</p> : null}
         </form>
-        <p className="helper">PDF와 시뮬레이션 데이터는 테스트 계정 기준으로 저장됩니다.</p>
+        <p className="helper">
+          계정이 없으신가요?{" "}
+          <Link className="auth-link" href="/signup">
+            회원가입
+          </Link>
+        </p>
       </section>
     </main>
   );
