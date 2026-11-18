@@ -2489,6 +2489,17 @@ a {
   text-align: center;
 }
 
+.auth-link {
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-link:hover {
+  color: var(--accent-hover);
+}
+
 .error {
   margin-top: 16px;
   padding: 14px 18px;
