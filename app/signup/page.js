@@ -10,7 +10,9 @@ import { authErrorMessage } from "../lib/authErrors";
 import { engineUrl } from "../lib/engineApi";
 import { readJsonResponse } from "../lib/httpResponse";
 
+// 엔진 POST /auth/signup 의 검증 규칙과 같은 값으로 유지한다
 const MIN_PASSWORD_LENGTH = 6;
+const MAX_NAME_LENGTH = 50;
 
 export default function SignupPage() {
   const router = useRouter();
@@ -30,6 +32,9 @@ export default function SignupPage() {
     }
   }, [authLoading, router, submitting, user]);
 
+  const passwordLongEnough = password.length >= MIN_PASSWORD_LENGTH;
+  const confirmStatus = !passwordConfirm ? "idle" : password === passwordConfirm ? "met" : "unmet";
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (submitting) return;
@@ -44,6 +49,10 @@ export default function SignupPage() {
     }
     if (!trimmedName) {
       setError("이름을 입력해주세요.");
+      return;
+    }
+    if (trimmedName.length > MAX_NAME_LENGTH) {
+      setError(`이름은 ${MAX_NAME_LENGTH}자 이하로 입력해주세요.`);
       return;
     }
     if (!trimmedCode) {
@@ -126,6 +135,7 @@ export default function SignupPage() {
               placeholder="홍길동"
               value={name}
               autoComplete="name"
+              maxLength={MAX_NAME_LENGTH}
               onChange={(event) => setName(event.target.value)}
               required
             />
@@ -153,13 +163,18 @@ export default function SignupPage() {
               className="input"
               id="password"
               type="password"
-              placeholder="6자 이상"
+              placeholder={`${MIN_PASSWORD_LENGTH}자 이상`}
               value={password}
               autoComplete="new-password"
               minLength={MIN_PASSWORD_LENGTH}
+              aria-describedby="password-rule"
               onChange={(event) => setPassword(event.target.value)}
               required
             />
+            <p id="password-rule" className={`field-hint ${password ? (passwordLongEnough ? "met" : "unmet") : ""}`}>
+              <span aria-hidden="true">{passwordLongEnough ? "✓" : "•"}</span>
+              {MIN_PASSWORD_LENGTH}자 이상 ({password.length}/{MIN_PASSWORD_LENGTH})
+            </p>
           </div>
           <div className="field">
             <label className="label" htmlFor="password-confirm">
@@ -173,9 +188,18 @@ export default function SignupPage() {
               value={passwordConfirm}
               autoComplete="new-password"
               minLength={MIN_PASSWORD_LENGTH}
+              aria-describedby="password-confirm-status"
               onChange={(event) => setPasswordConfirm(event.target.value)}
               required
             />
+            <p
+              id="password-confirm-status"
+              className={`field-hint ${confirmStatus === "idle" ? "" : confirmStatus}`}
+              aria-live="polite"
+            >
+              <span aria-hidden="true">{confirmStatus === "met" ? "✓" : "•"}</span>
+              {confirmStatus === "unmet" ? "비밀번호가 일치하지 않습니다" : "위 비밀번호와 일치"}
+            </p>
           </div>
           <div className="field">
             <label className="label" htmlFor="signup-code">

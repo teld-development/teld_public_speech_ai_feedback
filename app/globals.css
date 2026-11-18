@@ -2489,6 +2489,30 @@ a {
   text-align: center;
 }
 
+.field-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: -2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field-hint > span {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.field-hint.met {
+  color: #067647;
+}
+
+.field-hint.unmet {
+  color: #b42318;
+}
+
 .auth-link {
   font-weight: 600;
   color: var(--ink);
